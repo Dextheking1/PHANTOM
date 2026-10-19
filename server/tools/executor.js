@@ -113,9 +113,9 @@ export async function executeTool(name, args, onProgress) {
     case 'get_system_capabilities': return await getSystemCapabilitiesTool();
     // Web research tools
     case 'jina_read_url': return await jinaReadUrl(args);
-    case 'rea_capabilities': return reaCapabilities();
-    case 'rea_list_tools': return await reaListTools(args);
-    case 'rea_call_tool': return await reaCallTool(args);
+    case 'rea_capabilities': return JSON.stringify(reaCapabilities());
+    case 'rea_list_tools': return JSON.stringify(await reaListTools(args));
+    case 'rea_call_tool': return JSON.stringify(await reaCallTool(args));
     default:
       return `Unknown tool: ${name}`;
   }

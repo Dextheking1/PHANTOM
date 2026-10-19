@@ -203,13 +203,24 @@ captures, firmware, and runtime observations when the relevant provider is
 installed.
 
 The AI should call `rea_capabilities`, then `rea_list_tools`, and only then
-`rea_call_tool` using an exact discovered tool name. Target paths are limited
-to the project/workspace by default. To authorize an external local target,
-set this explicitly in `.env`:
+`rea_call_tool` using an exact discovered tool name. Execution is disabled by
+default: REA can launch processes and access files/network with the server's
+permissions. This bridge is not a sandbox. Review the tool and provider before
+opting in via `.env`:
 
 ```env
-REA_ALLOW_EXTERNAL_TARGETS=true
+REA_ENABLE_TOOL_CALLS=true
 ```
+
+The optional `target` convenience field is checked against the project/workspace.
+`REA_ALLOW_EXTERNAL_TARGETS=true` permits external convenience targets. This
+check does **not** confine arbitrary REA `arguments` or provider processes.
+Run untrusted analysis in a separate container with only authorized artifacts
+mounted; never mount credentials or sensitive host directories.
+
+Each bridge call currently starts a fresh REA server, so retained sessions
+across calls are not supported. Native engines, browsers, and optional Frida
+are not bundled or verified by this integration.
 
 This integration is for authorized analysis only. REA output is treated as
 untrusted evidence, not as instructions. The workspace skill is documented at

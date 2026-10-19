@@ -589,10 +589,11 @@ export function getToolDefinitions() {
       type: 'function',
       function: {
         name: 'rea_list_tools',
-        description: 'Discover the locally installed REA MCP reverse-engineering tools before calling one.',
+        description: 'List REA tool names, or supply tool_name to retrieve one exact input schema before calling it.',
         parameters: {
           type: 'object',
           properties: {
+            tool_name: { type: 'string', description: 'Optional exact tool name to retrieve its description and input schema.' },
             timeout: { type: 'integer', description: 'MCP startup/request timeout in milliseconds.', default: 330000 },
           },
         },

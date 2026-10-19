@@ -51,18 +51,25 @@ function createReaClient(timeoutMs) {
   return { client, transport };
 }
 
-export async function reaListTools({ timeout = DEFAULT_TIMEOUT_MS } = {}) {
+export async function reaListTools({ timeout = DEFAULT_TIMEOUT_MS, tool_name } = {}) {
   const { client, transport } = createReaClient(timeout);
   try {
     await client.connect(transport);
     const result = await client.listTools();
-    return result.tools || [];
+    const tools = result.tools || [];
+    // Keep discovery within PHANTOM's result budget; request one schema separately.
+    return tool_name
+      ? tools.filter(tool => tool.name === tool_name).map(({ name, description, inputSchema }) => ({ name, description, inputSchema }))
+      : tools.map(({ name }) => ({ name }));
   } finally {
     await client.close().catch(() => {});
   }
 }
 
 export async function reaCallTool({ tool_name, arguments: toolArguments = {}, target, timeout = DEFAULT_TIMEOUT_MS }) {
+  if (process.env.REA_ENABLE_TOOL_CALLS !== 'true') {
+    throw new Error('REA execution is disabled. The operator must set REA_ENABLE_TOOL_CALLS=true after reviewing provider permissions. REA tools may launch processes and access files or the network; the bridge is not a sandbox.');
+  }
   if (!tool_name || typeof tool_name !== 'string') {
     throw new Error('REA tool_name is required. Call rea_list_tools first to discover available tools.');
   }
@@ -75,7 +82,7 @@ export async function reaCallTool({ tool_name, arguments: toolArguments = {}, ta
   const { client, transport } = createReaClient(timeout);
   try {
     await client.connect(transport);
-    const result = await client.callTool({ name: tool_name, arguments: safeArguments });
+    const result = await client.callTool({ name: tool_name, arguments: safeArguments }, undefined, { timeout });
     return result;
   } finally {
     await client.close().catch(() => {});
@@ -88,6 +95,7 @@ export function reaCapabilities() {
     version: '6.7.0',
     transport: 'stdio MCP',
     entry: 'rea mcp',
-    externalTargetsAllowed: process.env.REA_ALLOW_EXTERNAL_TARGETS === 'true'
+    externalTargetsAllowed: process.env.REA_ALLOW_EXTERNAL_TARGETS === 'true',
+    toolCallsEnabled: process.env.REA_ENABLE_TOOL_CALLS === 'true'
   };
 }
