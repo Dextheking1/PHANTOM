@@ -1,621 +1,113 @@
-/**
- * Settings panel logic
- * Added: AI Doctor — temporary AI to diagnose & fix system issues
- */
+/** Settings for the core security workbench. */
 window.Settings = {
   panel: null,
   isOpen: false,
 
   init() {
     this.panel = document.getElementById('settings-panel');
-
-    // Open/close
-    document.getElementById('settings-btn').addEventListener('click', () => this.open());
+    document.getElementById('settings-btn')?.addEventListener('click', () => this.open());
     document.getElementById('welcome-settings-btn')?.addEventListener('click', () => this.open());
-    document.getElementById('settings-close').addEventListener('click', () => this.close());
-    document.getElementById('settings-overlay').addEventListener('click', () => this.close());
+    document.getElementById('settings-close')?.addEventListener('click', () => this.close());
+    document.getElementById('settings-overlay')?.addEventListener('click', () => this.close());
 
-    // Temperature slider
-    const tempSlider = document.getElementById('setting-temperature');
+    const temp = document.getElementById('setting-temperature');
     const tempValue = document.getElementById('temperature-value');
-    tempSlider.addEventListener('input', () => {
-      tempValue.textContent = tempSlider.value;
+    temp?.addEventListener('input', () => { tempValue.textContent = temp.value; });
+    document.getElementById('toggle-api-key')?.addEventListener('click', () => this.toggle('setting-api-key'));
+    document.getElementById('toggle-sudo-pass')?.addEventListener('click', () => this.toggle('setting-sudo-password'));
+    document.getElementById('test-connection')?.addEventListener('click', () => this.testConnection());
+    document.getElementById('save-settings')?.addEventListener('click', () => this.save());
+    document.getElementById('reset-system-prompt')?.addEventListener('click', () => {
+      const prompt = document.getElementById('setting-system-prompt');
+      if (prompt) prompt.value = '';
     });
 
-    // API key visibility toggle
-    document.getElementById('toggle-api-key').addEventListener('click', () => {
-      const input = document.getElementById('setting-api-key');
-      input.type = input.type === 'password' ? 'text' : 'password';
+    document.getElementById('setting-api-key')?.addEventListener('input', (event) => {
+      if (!event.target.value.trim().startsWith('nvapi-')) return;
+      const baseUrl = document.getElementById('setting-base-url');
+      const model = document.getElementById('setting-model');
+      if (baseUrl && (!baseUrl.value || baseUrl.value === 'https://api.openai.com/v1')) baseUrl.value = 'https://integrate.api.nvidia.com/v1';
+      if (model && (!model.value || model.value === 'gpt-4o')) model.value = 'meta/llama-3.3-70b-instruct';
     });
-
-    // Auto-configure NVIDIA NIM provider if nvapi- key is entered
-    const apiKeyInput = document.getElementById('setting-api-key');
-    apiKeyInput?.addEventListener('input', (e) => {
-      const val = e.target.value.trim();
-      if (val.startsWith('nvapi-')) {
-        const baseUrlInput = document.getElementById('setting-base-url');
-        const modelInput = document.getElementById('setting-model');
-        if (baseUrlInput && (!baseUrlInput.value || baseUrlInput.value === 'https://api.openai.com/v1')) {
-          baseUrlInput.value = 'https://integrate.api.nvidia.com/v1';
-        }
-        if (modelInput && (!modelInput.value || modelInput.value === 'gpt-4o')) {
-          modelInput.value = 'meta/llama-3.3-70b-instruct';
-        }
-      }
-    });
-
-    // Sudo password visibility toggle
-    document.getElementById('toggle-sudo-pass').addEventListener('click', () => {
-      const input = document.getElementById('setting-sudo-password');
-      input.type = input.type === 'password' ? 'text' : 'password';
-    });
-
-    // Test connection
-    document.getElementById('test-connection').addEventListener('click', () => this.testConnection());
-
-    // Save settings
-    document.getElementById('save-settings').addEventListener('click', () => this.save());
-
-    // Telegram Bot enable/disable toggle
-    const tgEnableToggle = document.getElementById('setting-telegram-enable');
-    const tgFields = document.getElementById('telegram-fields');
-    if (tgEnableToggle && tgFields) {
-      tgEnableToggle.addEventListener('change', (e) => {
-        if (e.target.checked) {
-          tgFields.style.opacity = '1';
-          tgFields.style.pointerEvents = 'auto';
-        } else {
-          tgFields.style.opacity = '0.5';
-          tgFields.style.pointerEvents = 'none';
-        }
-      });
-    }
-
-    // Telegram Bot Token visibility toggle
-    const tgTokenToggle = document.getElementById('toggle-telegram-token');
-    const tgTokenInput = document.getElementById('setting-telegram-token');
-    if (tgTokenToggle && tgTokenInput) {
-      tgTokenToggle.addEventListener('click', () => {
-        tgTokenInput.type = tgTokenInput.type === 'password' ? 'text' : 'password';
-      });
-    }
-
-    // Save Telegram settings
-    const saveTgBtn = document.getElementById('save-telegram-btn');
-    if (saveTgBtn) {
-      saveTgBtn.addEventListener('click', () => this.saveTelegram());
-    }
-
-
-
-
-    // AI Doctor button
-    document.getElementById('ai-doctor-btn').addEventListener('click', () => this.openDoctor());
-
-    // Reset system prompt
-    document.getElementById('reset-system-prompt').addEventListener('click', () => {
-      document.getElementById('setting-system-prompt').value = '';
-    });
-
-    // Load settings on init
 
     this.load();
-
-    // Keyboard shortcut
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && this.isOpen) this.close();
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && this.isOpen) this.close();
     });
-
-    // Agent Reach configuration
-    document.getElementById('agent-reach-btn').addEventListener('click', () => this.openAgentReach());
-    this._initAgentReachModal();
-
-    // Init AI Doctor modal logic
-    this._initDoctorModal();
   },
 
-  open() {
-    this.panel.classList.remove('hidden');
-    this.isOpen = true;
+  toggle(id) {
+    const input = document.getElementById(id);
+    if (input) input.type = input.type === 'password' ? 'text' : 'password';
   },
 
-  close() {
-    this.panel.classList.add('hidden');
-    this.isOpen = false;
-  },
+  open() { this.panel?.classList.remove('hidden'); this.isOpen = true; },
+  close() { this.panel?.classList.add('hidden'); this.isOpen = false; },
 
   async load() {
     try {
-      const res = await fetch('/api/settings');
-      const data = await res.json();
-
-      document.getElementById('setting-base-url').value = data.baseUrl || '';
-      document.getElementById('setting-api-key').value = data.apiKeySet ? '••••••••' : '';
-      document.getElementById('setting-model').value = data.model || '';
-      document.getElementById('setting-temperature').value = data.temperature || 0.7;
-      document.getElementById('temperature-value').textContent = data.temperature || 0.7;
-      document.getElementById('setting-max-tokens').value = data.maxTokens || 4096;
-      document.getElementById('setting-workspace').value = data.workspace || '';
-      document.getElementById('setting-telegram-token').value = data.telegramBotToken || '';
-      document.getElementById('setting-telegram-userid').value = data.telegramUserId || '';
-      const systemPromptEl = document.getElementById('setting-system-prompt');
-      if (systemPromptEl) {
-          systemPromptEl.value = data.systemPrompt || '';
-      }
-
-      const hasTgConfig = !!(data.telegramBotToken || data.telegramUserId);
-      const tgEnable = document.getElementById('setting-telegram-enable');
-      if (tgEnable) {
-          tgEnable.checked = hasTgConfig;
-          tgEnable.dispatchEvent(new Event('change'));
-      }
-      this.updateTelegramStatus();
-
-      // Update model badge
-      document.getElementById('current-model').textContent = data.model || 'No Model';
-
-      if (data.isWindows) {
-        const sudoInput = document.getElementById('setting-sudo-password');
-        const sudoWrap = sudoInput?.closest('.setting-item');
-        if (sudoWrap) {
-          const modeText = data.windowsAdmin ? 'PowerShell (Administrator Mode)' : 'PowerShell (Normal User Mode)';
-          const modeColor = data.windowsAdmin ? '#16a34a' : '#eab308';
-          sudoWrap.innerHTML = `
-            <label>Windows Execution Privilege Mode</label>
-            <div style="padding: 8px 12px; background: rgba(255,255,255,0.05); border-radius: 6px; font-weight: 600; color: ${modeColor}; display: flex; align-items: center; gap: 8px;">
-              <span>${data.windowsAdmin ? '🛡️' : '💻'}</span> ${modeText}
-            </div>
-            <p style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
-              Windows commands execute in PowerShell under the server process privilege mode without requiring sudo.
-            </p>
-          `;
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load settings:', err);
+      const response = await fetch('/api/settings');
+      const data = await response.json();
+      const values = {
+        'setting-base-url': data.baseUrl || '',
+        'setting-api-key': data.apiKeySet ? '••••••••' : '',
+        'setting-model': data.model || '',
+        'setting-temperature': data.temperature || 0.7,
+        'setting-max-tokens': data.maxTokens || 4096,
+        'setting-workspace': data.workspace || '',
+        'setting-system-prompt': data.systemPrompt || '',
+      };
+      Object.entries(values).forEach(([id, value]) => { const el = document.getElementById(id); if (el) el.value = value; });
+      const tempValue = document.getElementById('temperature-value');
+      if (tempValue) tempValue.textContent = values['setting-temperature'];
+      const model = document.getElementById('current-model');
+      if (model) model.textContent = data.model || 'No Model';
+    } catch (error) {
+      window.Toast?.show(`Could not load settings: ${error.message}`, 'error');
     }
   },
 
   async save() {
-    const btn = document.getElementById('save-settings');
-    const originalText = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = 'Saving...';
-
+    const button = document.getElementById('save-settings');
+    const apiKey = document.getElementById('setting-api-key')?.value || '';
+    const sudoPassword = document.getElementById('setting-sudo-password')?.value || '';
     const settings = {
-      baseUrl: document.getElementById('setting-base-url').value,
-      model: document.getElementById('setting-model').value,
-      temperature: parseFloat(document.getElementById('setting-temperature').value),
-      maxTokens: parseInt(document.getElementById('setting-max-tokens').value),
-      workspace: document.getElementById('setting-workspace').value,
-      telegramBotToken: document.getElementById('setting-telegram-enable').checked ? document.getElementById('setting-telegram-token').value : '',
-      telegramUserId: document.getElementById('setting-telegram-enable').checked ? document.getElementById('setting-telegram-userid').value : '',
+      baseUrl: document.getElementById('setting-base-url')?.value,
+      model: document.getElementById('setting-model')?.value,
+      temperature: Number(document.getElementById('setting-temperature')?.value || 0.7),
+      maxTokens: Number(document.getElementById('setting-max-tokens')?.value || 4096),
+      workspace: document.getElementById('setting-workspace')?.value,
       systemPrompt: document.getElementById('setting-system-prompt')?.value || '',
     };
-
-    const apiKey = document.getElementById('setting-api-key').value;
-    if (apiKey && !apiKey.startsWith('••')) {
-      settings.apiKey = apiKey;
-    }
-
-    const sudoPassword = document.getElementById('setting-sudo-password').value;
-    if (sudoPassword) {
-      settings.sudoPassword = sudoPassword;
-    }
-
+    if (apiKey && !apiKey.startsWith('••')) settings.apiKey = apiKey;
+    if (sudoPassword) settings.sudoPassword = sudoPassword;
+    if (button) { button.disabled = true; button.textContent = 'Saving…'; }
     try {
-      const res = await fetch('/api/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings),
-      });
-
-      if (res.ok) {
-        document.getElementById('current-model').textContent = settings.model || 'No Model';
-
-        btn.textContent = '✓ Saved';
-        btn.style.background = '#16a34a';
-        setTimeout(() => {
-          btn.textContent = '💾 Save Settings';
-          btn.style.background = '';
-          btn.disabled = false;
-        }, 1500);
-      } else {
-        btn.disabled = false;
-        btn.textContent = originalText;
-      }
-    } catch (err) {
-      console.error('Failed to save settings:', err);
-      btn.disabled = false;
-      btn.textContent = originalText;
-    }
-  },
-
-  async saveTelegram() {
-    const btn = document.getElementById('save-telegram-btn');
-    const originalText = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = 'Saving...';
-
-    await this.save(); // Save everything first
-
-    try {
-        const res = await fetch('/api/telegram/restart', { method: 'POST' });
-        const data = await res.json();
-
-        if (data.success) {
-            btn.textContent = '✓ Restarted';
-            btn.style.background = '#16a34a';
-        } else {
-            throw new Error(data.error);
-        }
-    } catch (err) {
-        console.error('Failed to restart Telegram bot:', err);
+      const response = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) });
+      if (!response.ok) throw new Error((await response.json()).error || 'Save failed');
+      const model = document.getElementById('current-model');
+      if (model) model.textContent = settings.model || 'No Model';
+      if (button) button.textContent = 'Saved';
+      window.Toast?.show('Settings saved', 'success');
+    } catch (error) {
+      window.Toast?.show(error.message, 'error');
+      if (button) button.textContent = 'Save Settings';
     } finally {
-        setTimeout(() => {
-            btn.textContent = originalText;
-            btn.style.background = '';
-            btn.disabled = false;
-        }, 1500);
-        this.updateTelegramStatus();
+      if (button) { setTimeout(() => { button.disabled = false; button.textContent = 'Save Settings'; }, 1200); }
     }
-  },
-
-  async updateTelegramStatus() {
-      const statusContainer = document.getElementById('telegram-status');
-      if (!statusContainer) return;
-      try {
-          const res = await fetch('/api/telegram/status');
-          const data = await res.json();
-          if (data.error) {
-              statusContainer.innerHTML = `<span class="status-dot" style="background: #ef4444;"></span> Error: ${data.error}`;
-          } else if (data.running) {
-              statusContainer.innerHTML = `<span class="status-dot" style="background: #22c55e; box-shadow: 0 0 8px #22c55e; animation: pulse 2s infinite;"></span> Bot running`;
-          } else {
-              statusContainer.innerHTML = `<span class="status-dot" style="background: gray;"></span> Not configured`;
-          }
-      } catch (err) {
-          statusContainer.innerHTML = `<span class="status-dot" style="background: #ef4444;"></span> Error: ${err.message}`;
-      }
   },
 
   async testConnection() {
-    const btn = document.getElementById('test-connection');
-    const originalText = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = 'Testing...';
-
-    const resultEl = document.getElementById('test-result');
-    resultEl.className = 'test-result';
-    resultEl.textContent = 'Testing...';
-
+    const result = document.getElementById('test-result');
+    if (result) { result.className = 'test-result'; result.textContent = 'Testing…'; }
     await this.save();
-
     try {
-      const res = await fetch('/api/settings/test', { method: 'POST' });
-      const data = await res.json();
-
-      if (data.success) {
-        resultEl.className = 'test-result success';
-        resultEl.textContent = `✓ ${data.message}`;
-      } else {
-        resultEl.className = 'test-result error';
-        resultEl.textContent = `✗ ${data.message}`;
-      }
-    } catch (err) {
-      resultEl.className = 'test-result error';
-      resultEl.textContent = `✗ ${err.message}`;
-    } finally {
-      btn.disabled = false;
-      btn.textContent = originalText;
-    }
-
-    setTimeout(() => { resultEl.textContent = ''; }, 5000);
-  },
-
-  // ─── Agent Reach ───
-  openAgentReach() {
-    const modal = document.getElementById('agent-reach-modal');
-    modal.classList.remove('hidden');
-    this.loadAgentReachStatus();
-  },
-
-  _initAgentReachModal() {
-    const modal = document.getElementById('agent-reach-modal');
-    const overlay = document.getElementById('agent-reach-overlay');
-    const closeBtn = document.getElementById('agent-reach-close');
-
-    overlay?.addEventListener('click', () => modal.classList.add('hidden'));
-    closeBtn?.addEventListener('click', () => modal.classList.add('hidden'));
-
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
-        modal.classList.add('hidden');
-      }
-    });
-
-    // Save buttons for each platform
-    document.querySelectorAll('.ar-save-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const platform = btn.dataset.platform;
-        const cookie = document.getElementById(`ar-cookie-${platform}`).value.trim();
-
-        const originalText = btn.textContent;
-        btn.disabled = true;
-        btn.textContent = 'Saving...';
-
-        try {
-          const res = await fetch('/api/agent-reach/config', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ platform, cookie }),
-          });
-          const data = await res.json();
-
-          if (data.success) {
-            btn.textContent = '✓ Saved';
-            btn.style.background = '#16a34a';
-            this.loadAgentReachStatus();
-          } else {
-            throw new Error(data.error || 'Save failed');
-          }
-        } catch (err) {
-          console.error(`Failed to save ${platform} config:`, err);
-          btn.textContent = '✗ Error';
-          btn.style.background = '#ef4444';
-        }
-
-        setTimeout(() => {
-          btn.textContent = originalText;
-          btn.style.background = '';
-          btn.disabled = false;
-        }, 1500);
-      });
-    });
-
-    // Load status on init
-    this.loadAgentReachStatus();
-  },
-
-  async loadAgentReachStatus() {
-    const platforms = ['reddit', 'xiaohongshu', 'linkedin'];
-
-    try {
-      const res = await fetch('/api/agent-reach/config');
-      const data = await res.json();
-
-      const statusContainer = document.getElementById('agent-reach-status');
-      let badges = '';
-
-      for (const p of platforms) {
-        const configured = data[p]?.configured || false;
-        const icon = { reddit: '📖', xiaohongshu: '📕', linkedin: '💼' }[p];
-        const label = { reddit: 'Reddit', xiaohongshu: 'XHS', linkedin: 'LinkedIn' }[p];
-
-        badges += `<span class="ar-settings-badge ${configured ? 'active' : 'inactive'}">${icon} ${label}</span>`;
-
-        // Update modal badges
-        const badgeEl = document.getElementById(`ar-status-${p}`);
-        if (badgeEl) {
-          badgeEl.textContent = configured ? '✓ Configured' : 'Not configured';
-          badgeEl.className = `ar-platform-badge ${configured ? 'configured' : 'not-configured'}`;
-        }
-
-        // Pre-fill cookie field if configured (show masked)
-        const cookieEl = document.getElementById(`ar-cookie-${p}`);
-        if (cookieEl && configured && !cookieEl.value) {
-          cookieEl.placeholder = 'Cookie saved ✓ — paste new cookie to replace';
-        }
-      }
-
-      if (statusContainer) statusContainer.innerHTML = badges;
-    } catch (err) {
-      console.error('Failed to load Agent Reach status:', err);
-    }
-  },
-
-  // ─── AI Doctor ───
-  openDoctor() {
-    const modal = document.getElementById('ai-doctor-modal');
-    modal.classList.remove('hidden');
-    // Reset to config screen
-    document.getElementById('doctor-config-screen').style.display = 'block';
-    document.getElementById('doctor-chat-screen').style.display = 'none';
-  },
-
-  _initDoctorModal() {
-    const modal = document.getElementById('ai-doctor-modal');
-    const overlay = document.getElementById('ai-doctor-overlay');
-    const closeBtn = document.getElementById('ai-doctor-close');
-    const startBtn = document.getElementById('doctor-start-btn');
-    const sendBtn = document.getElementById('doctor-send-btn');
-    const stopBtn = document.getElementById('doctor-stop-btn');
-    const chatInput = document.getElementById('doctor-chat-input');
-
-    overlay?.addEventListener('click', () => modal.classList.add('hidden'));
-    closeBtn?.addEventListener('click', () => modal.classList.add('hidden'));
-
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
-        modal.classList.add('hidden');
-      }
-    });
-
-    // Doctor API key toggle
-    document.getElementById('doctor-toggle-key')?.addEventListener('click', () => {
-      const inp = document.getElementById('doctor-api-key');
-      inp.type = inp.type === 'password' ? 'text' : 'password';
-    });
-
-    let doctorAbortController = null;
-
-    startBtn?.addEventListener('click', async () => {
-      const baseUrl = document.getElementById('doctor-base-url').value.trim() || 'https://api.openai.com/v1';
-      const apiKey = document.getElementById('doctor-api-key').value.trim();
-      const model = document.getElementById('doctor-model').value.trim() || 'gpt-4o';
-
-      if (!apiKey) {
-        document.getElementById('doctor-config-feedback').textContent = '⚠️ API Key is required';
-        return;
-      }
-
-      document.getElementById('doctor-config-feedback').textContent = '';
-      document.getElementById('doctor-config-screen').style.display = 'none';
-      document.getElementById('doctor-chat-screen').style.display = 'flex';
-
-      // Store temp config
-      modal._doctorConfig = { baseUrl, apiKey, model };
-
-      // Clear chat
-      const messagesEl = document.getElementById('doctor-messages');
-      messagesEl.innerHTML = '';
-
-      // Auto-start diagnosis
-      await runDoctorMessage('Diagnose my system: check for common issues, broken services, high CPU/memory usage, disk space problems, failed systemd services, and any security concerns. Then suggest and apply fixes where safe to do automatically.', modal._doctorConfig);
-    });
-
-    sendBtn?.addEventListener('click', () => {
-      const msg = chatInput.value.trim();
-      if (!msg) return;
-      chatInput.value = '';
-      runDoctorMessage(msg, modal._doctorConfig);
-    });
-
-    chatInput?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        const msg = chatInput.value.trim();
-        if (msg) {
-          chatInput.value = '';
-          runDoctorMessage(msg, modal._doctorConfig);
-        }
-      }
-    });
-
-    stopBtn?.addEventListener('click', () => {
-      if (doctorAbortController) {
-        doctorAbortController.abort();
-        doctorAbortController = null;
-      }
-      sendBtn.disabled = false;
-      stopBtn.style.display = 'none';
-      sendBtn.style.display = 'flex';
-    });
-
-    async function runDoctorMessage(userMsg, config) {
-      const messagesEl = document.getElementById('doctor-messages');
-
-      // Show user message
-      const userEl = document.createElement('div');
-      userEl.className = 'doctor-msg doctor-msg-user';
-      userEl.textContent = userMsg;
-      messagesEl.appendChild(userEl);
-      scrollDoctorToBottom();
-
-      // Show thinking indicator
-      const thinkEl = document.createElement('div');
-      thinkEl.className = 'doctor-msg doctor-msg-ai doctor-thinking';
-      thinkEl.innerHTML = '<span class="spinner"></span> Dr. AI is analyzing...';
-      messagesEl.appendChild(thinkEl);
-      scrollDoctorToBottom();
-
-      sendBtn.disabled = true;
-      sendBtn.style.display = 'none';
-      stopBtn.style.display = 'flex';
-
-      doctorAbortController = new AbortController();
-
-      try {
-        const systemPrompt = `You are Dr. AI — an expert system doctor and Linux/system administrator AI. 
-You diagnose and fix system problems. You can:
-- Analyze system logs, processes, and services
-- Identify performance issues, broken services, security problems
-- Execute diagnostic commands via the PHANTOM server
-- Suggest and apply fixes autonomously
-- Explain everything clearly to the user
-
-Be proactive, thorough, and fix issues automatically when safe to do so.
-Use your tool access through PHANTOM's execute_command and read_file capabilities when needed.`;
-
-        const response = await fetch('/api/doctor/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: userMsg,
-            config,
-            systemPrompt,
-          }),
-          signal: doctorAbortController.signal,
-        });
-
-        thinkEl.remove();
-
-        if (!response.ok) {
-          throw new Error(`Server error: ${response.status}`);
-        }
-
-        // Stream the response
-        const aiEl = document.createElement('div');
-        aiEl.className = 'doctor-msg doctor-msg-ai';
-        aiEl.innerHTML = '';
-        messagesEl.appendChild(aiEl);
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let fullText = '';
-        let buffer = '';
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop(); // keep incomplete line in buffer
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6);
-              if (data === '[DONE]') continue;
-              try {
-                const parsed = JSON.parse(data);
-                const text = parsed.choices?.[0]?.delta?.content || '';
-                if (text) {
-                  fullText += text;
-                  aiEl.innerHTML = window.renderMarkdown(fullText);
-                  scrollDoctorToBottom();
-                }
-              } catch (err) {
-                console.error('Failed to parse doctor response chunk:', err);
-              }
-            }
-          }
-        }
-
-      } catch (err) {
-        thinkEl.remove();
-        if (err.name !== 'AbortError') {
-          const errEl = document.createElement('div');
-          errEl.className = 'doctor-msg doctor-msg-error';
-          errEl.textContent = '❌ Error: ' + err.message;
-          messagesEl.appendChild(errEl);
-          scrollDoctorToBottom();
-        }
-      }
-
-      doctorAbortController = null;
-      sendBtn.disabled = false;
-      sendBtn.style.display = 'flex';
-      stopBtn.style.display = 'none';
-    }
-
-    function scrollDoctorToBottom() {
-      const messagesEl = document.getElementById('doctor-messages');
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          messagesEl.scrollTop = messagesEl.scrollHeight;
-        });
-      });
+      const response = await fetch('/api/settings/test', { method: 'POST' });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.message || data.error || 'Connection failed');
+      if (result) { result.className = 'test-result success'; result.textContent = `✓ ${data.message}`; }
+    } catch (error) {
+      if (result) { result.className = 'test-result error'; result.textContent = `✗ ${error.message}`; }
     }
   },
 };

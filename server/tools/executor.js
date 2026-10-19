@@ -7,7 +7,7 @@ import { saveMemory, hybridSearchMemories, getMemoryStats, searchConversations, 
 import { getSetting } from '../memory/store.js';
 import config from '../config.js';
 import { getSystemCapabilities } from './self_awareness.js';
-import { jinaReadUrl, youtubeSearch, youtubeGetSubtitles, rssReadFeed, v2exBrowse, socialMediaCrawl } from './internet.js';
+import { jinaReadUrl } from './internet.js';
 
 /**
  * Checks if the current process is running with Windows Administrator (Elevated) privileges.
@@ -109,51 +109,12 @@ export async function executeTool(name, args, onProgress) {
     case 'show_code_demo': return showCodeDemo(args);
     case 'write_skill': return await writeSkill(args);
     case 'analyze_target_graph': return analyzeTargetGraph(args);
-    case 'send_file_to_telegram': return await sendFileToTelegramTool(args);
     case 'get_system_capabilities': return await getSystemCapabilitiesTool();
-    case 'ruflo_agent_swarm': return await rufloAgentSwarm(args, onProgress);
-    // Internet Crawling Tools (Agent Reach Zero-Config)
+    // Web research tools
     case 'jina_read_url': return await jinaReadUrl(args);
-    case 'youtube_search': return await youtubeSearch(args);
-    case 'youtube_get_subtitles': return await youtubeGetSubtitles(args);
-    case 'rss_read_feed': return await rssReadFeed(args);
-    case 'v2ex_browse': return await v2exBrowse(args);
-    case 'social_media_crawl': return await socialMediaCrawl(normalizeSocialArgs(args, args?.platform || 'reddit'));
-    case 'reddit_crawl': return await socialMediaCrawl(normalizeSocialArgs(args, 'reddit'));
-    case 'linkedin_crawl': return await socialMediaCrawl(normalizeSocialArgs(args, 'linkedin'));
     default:
       return `Unknown tool: ${name}`;
   }
-}
-
-/**
- * Normalizes tool parameters for social media crawl tools (handles raw strings, missing actions, etc.)
- */
-function normalizeSocialArgs(args, platform) {
-  if (!args) return { platform, action: 'search', query: 'trending' };
-
-  if (typeof args === 'string') {
-    return { platform, action: 'search', query: args };
-  }
-
-  let norm = typeof args === 'object' && args !== null ? { ...args, platform } : { platform };
-
-  if (norm.query || norm.topic || norm.keyword) {
-    if (!norm.query) norm.query = norm.topic || norm.keyword;
-    if (!norm.action || norm.action === 'read') {
-      norm.action = norm.url ? 'read' : 'search';
-    }
-  }
-
-  if (norm.url && !norm.action) {
-    norm.action = 'read';
-  }
-
-  if (!norm.action) {
-    norm.action = norm.url ? 'read' : 'search';
-  }
-
-  return norm;
 }
 
 /**
@@ -1132,36 +1093,4 @@ async function delegateTaskTool({ task_description }, onProgress) {
 async function getSystemCapabilitiesTool() {
   const skillsDir = join(config.workspace, 'skills');
   return getSystemCapabilities(skillsDir);
-}
-
-
-async function sendFileToTelegramTool({ file_path, caption = '' }) {
-  // Get the active Telegram chat ID from the session
-  const { getActiveTelegramSession } = await import('../telegram/session.js');
-  const session = getActiveTelegramSession();
-
-  if (!session || !session.chatId || !session.bot) {
-    return { success: false, error: 'No active Telegram session. This tool only works when called from a Telegram chat.' };
-  }
-
-  const { sendFile } = await import('../telegram/sender.js');
-  return await sendFile(session.bot, session.chatId, file_path, caption);
-}
-
-/**
- * Executes a multi-agent swarm via Ruflo.
- */
-async function rufloAgentSwarm({ goal }, onProgress) {
-  try {
-    if (onProgress) onProgress('Initializing Ruflo multi-agent swarm...');
-
-    // First run init to ensure config is set up
-    await executeCommand({ command: 'npx claude-flow init --start-daemon --minimal', timeout: 120 }, onProgress);
-
-    if (onProgress) onProgress(`Starting swarm with goal: ${goal}`);
-    // Then start the swarm
-    return await executeCommand({ command: `npx claude-flow swarm start -o "${goal}" -s balanced`, timeout: 600 }, onProgress);
-  } catch (err) {
-    return `Error executing Ruflo swarm: ${err.message}`;
-  }
 }

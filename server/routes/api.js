@@ -10,7 +10,7 @@ import {
   getMCPServers, addMCPServer, removeMCPServer,
 } from '../memory/store.js';
 import { getToolDefinitions } from '../tools/registry.js';
-import { validateUrlForSSRF, isWindowsAdmin } from '../tools/executor.js';
+import { isWindowsAdmin } from '../tools/executor.js';
 import os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -19,7 +19,6 @@ import { rmSync, mkdirSync, existsSync, promises as fsPromises } from 'fs';
 const execAsync = promisify(exec);
 import { join, basename, resolve, sep } from 'path';
 import multer from 'multer';
-import { startBot, stopBot, getBotStatus } from '../telegram/bot.js';
 import AdmZip from 'adm-zip';
 import { marked } from 'marked';
 
@@ -63,8 +62,6 @@ router.get('/settings', (req, res) => {
       sudoConfigured: isWindows ? true : !!settings.sudo_password,
       isWindows,
       windowsAdmin,
-      telegramBotToken: settings.telegram_bot_token ? '••••••••' : '',
-      telegramUserId: settings.telegram_user_id || '',
       systemPrompt: settings.system_prompt || config.systemPrompt || '',
     });
   } catch (err) {
@@ -74,7 +71,7 @@ router.get('/settings', (req, res) => {
 
 router.put('/settings', (req, res) => {
   try {
-    const { baseUrl, apiKey, model, temperature, maxTokens, sudoPassword, workspace, telegramBotToken, telegramUserId, systemPrompt } = req.body;
+    const { baseUrl, apiKey, model, temperature, maxTokens, sudoPassword, workspace, systemPrompt } = req.body;
 
     if (baseUrl) { setSetting('api_base_url', baseUrl); updateConfig({ baseUrl }); }
     if (apiKey && apiKey !== '••••••••') { setSetting('api_key', apiKey); updateConfig({ apiKey }); }
@@ -83,8 +80,6 @@ router.put('/settings', (req, res) => {
     if (maxTokens !== undefined) { setSetting('api_max_tokens', String(maxTokens)); updateConfig({ maxTokens }); }
     if (sudoPassword !== undefined) { setSetting('sudo_password', sudoPassword); }
     if (workspace) { setSetting('workspace', workspace); updateConfig({ workspace }); }
-    if (telegramBotToken !== undefined && telegramBotToken !== '••••••••') { setSetting('telegram_bot_token', telegramBotToken); updateConfig({ telegramBotToken }); }
-    if (telegramUserId !== undefined) { setSetting('telegram_user_id', telegramUserId); updateConfig({ telegramUserId }); }
     if (systemPrompt !== undefined) { setSetting('system_prompt', systemPrompt); updateConfig({ systemPrompt }); }
 
     resetClient();
@@ -105,54 +100,6 @@ router.post('/settings/test', async (req, res) => {
 
 
 
-
-// ─── Telegram ───
-router.get('/telegram/status', (req, res) => {
-  try {
-    res.json(getBotStatus());
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.post('/telegram/restart', (req, res) => {
-  try {
-    stopBot();
-    startBot();
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// ─── Agent Reach Config ───
-const AR_PLATFORMS = ['twitter', 'reddit', 'xiaohongshu', 'linkedin', 'instagram'];
-
-router.get('/agent-reach/config', (req, res) => {
-  try {
-    const result = {};
-    for (const p of AR_PLATFORMS) {
-      const cookie = getSetting(`ar_cookie_${p}`);
-      result[p] = { configured: !!cookie };
-    }
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.put('/agent-reach/config', (req, res) => {
-  try {
-    const { platform, cookie } = req.body;
-    if (!platform || !AR_PLATFORMS.includes(platform)) {
-      return res.status(400).json({ error: `Invalid platform. Must be one of: ${AR_PLATFORMS.join(', ')}` });
-    }
-    setSetting(`ar_cookie_${platform}`, cookie || '');
-    res.json({ success: true, message: `${platform} cookie saved` });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // ─── AgentMemory Engine Endpoints ───
 router.get('/memory/stats', (req, res) => {
@@ -190,8 +137,7 @@ router.post('/memory', async (req, res) => {
 // ─── Conversations ───
 router.get('/conversations', (req, res) => {
   try {
-    const convs = getConversations().filter(c => !c.title || !c.title.toLowerCase().includes('telegram'));
-    res.json(convs);
+    res.json(getConversations());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -683,120 +629,5 @@ router.delete('/skills/:name', (req, res) => {
   }
 });
 
-
-// ─── AI Doctor ───
-// Uses temporary API credentials — completely separate from main PHANTOM config.
-// Uses raw fetch to call any OpenAI-compatible API and pipes the SSE stream to the client.
-router.post('/doctor/chat', async (req, res) => {
-  const { message, config: doctorCfg, systemPrompt } = req.body;
-
-  if (!doctorCfg?.apiKey) {
-    return res.status(400).json({ error: 'API key required' });
-  }
-
-  const baseUrl = (doctorCfg.baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
-
-  try {
-    validateUrlForSSRF(baseUrl);
-  } catch (err) {
-    if (err.message === 'Invalid URL format' || err.message.includes('protocol')) {
-      return res.status(400).json({ error: err.message });
-    }
-    return res.status(403).json({ error: err.message });
-  }
-
-  const apiKey  = doctorCfg.apiKey;
-  const model   = doctorCfg.model || 'gpt-4o';
-
-  // Gather live system context without blocking the event loop
-  const sysInfo = [];
-  const sysCommands = [
-    { prefix: 'OS: ', cmd: "cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d= -f2 | tr -d '\"'" },
-    { prefix: 'Kernel: ', cmd: 'uname -r' },
-    { prefix: 'Uptime: ', cmd: 'uptime -p' },
-    { prefix: 'Disk: ', cmd: 'df -h / | tail -1' },
-    { prefix: 'Memory: ', cmd: 'free -h | head -2 | tail -1' },
-    { prefix: 'Failed services:\n', cmd: 'systemctl --failed --no-legend 2>/dev/null | head -10' }
-  ];
-
-  const sysResults = await Promise.allSettled(
-    sysCommands.map(c => execAsync(c.cmd, { encoding: 'utf8' }))
-  );
-
-  sysResults.forEach((result, idx) => {
-    if (result.status === 'fulfilled' && result.value.stdout) {
-      const output = result.value.stdout.trim();
-      if (output) {
-        sysInfo.push(sysCommands[idx].prefix + output);
-      }
-    }
-  });
-
-  const fullSystemPrompt =
-    (systemPrompt || 'You are Dr. AI — an expert Linux system administrator and diagnostics AI. Diagnose and fix system issues proactively.') +
-    (sysInfo.length ? `\n\n## LIVE SYSTEM STATE\n${sysInfo.join('\n')}` : '');
-
-  const messages = [
-    { role: 'system', content: fullSystemPrompt },
-    { role: 'user',   content: message },
-  ];
-
-  // Send SSE headers immediately
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-  res.flushHeaders();
-
-  try {
-    // Call OpenAI-compatible API directly via fetch — no SDK, no dynamic import issues
-    const apiRes = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        stream: true,
-        temperature: 0.7,
-        max_tokens: 4096,
-      }),
-    });
-
-    if (!apiRes.ok) {
-      const errText = await apiRes.text();
-      const errContent = `\n\n❌ **API Error ${apiRes.status}**\n\`\`\`\n${errText.substring(0, 400)}\n\`\`\``;
-      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: errContent } }] })}\n\n`);
-      res.write('data: [DONE]\n\n');
-      res.end();
-      return;
-    }
-
-    // Pipe SSE bytes directly from OpenAI API → client (format is already correct)
-    const reader = apiRes.body.getReader();
-    const decoder = new TextDecoder();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done || req.socket.destroyed) break;
-      res.write(decoder.decode(value, { stream: true }));
-    }
-
-    res.write('data: [DONE]\n\n');
-    res.end();
-
-  } catch (err) {
-    console.error('[AI Doctor] Error:', err.message);
-    const errContent = `\n\n❌ **Error:** ${err.message}`;
-    if (!res.headersSent) {
-      res.status(500).json({ error: err.message });
-    } else {
-      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: errContent } }] })}\n\n`);
-      res.write('data: [DONE]\n\n');
-      res.end();
-    }
-  }
-});
 
 export default router;

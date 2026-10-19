@@ -1,5 +1,4 @@
 import { renderSkillManager } from './skill-manager.js';
-import { renderAnalysisDashboard } from './analysis-dashboard.js';
 
 /**
  * Management panel — MCP Servers + Skills
@@ -13,7 +12,6 @@ window.Management = {
     if (!this.panel) return;
 
     renderSkillManager('skill-manager-root');
-    renderAnalysisDashboard('analysis-dashboard-root');
 
     // Open/close
     document.getElementById('manage-btn')?.addEventListener('click', () => this.open());

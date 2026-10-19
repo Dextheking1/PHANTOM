@@ -100,11 +100,9 @@ npm test
 | 🧩 **MCP Server Hub** | Native Model Context Protocol infrastructure supporting typed JSON schemas and rate-limited endpoints |
 | 📦 **Skills System** | Trust-tiered SKILL.md packages utilizing `isolated-vm` sandboxing |
 | 🌐 **Web Research** | Built-in web search and webpage scraping for real-time information |
-| 🕷️ **Scrapling Integration** | Anti-bot bypass, Cloudflare solving, JS rendering via [Scrapling](https://github.com/D4Vinci/Scrapling) |
 | 💾 **Semantic Memory** | Local Vector Search (`@xenova/transformers`) paired with standard FTS |
 | 🛑 **Emergency Stop** | Instant abort button to halt any running operation |
-| 🎨 **Premium Dark UI** | Includes live animated Canvas graph of multi-agent communication |
-| 🌐 **Internet Crawling** | Zero-config web reading, YouTube subtitles, RSS feeds, V2EX via Agent Reach integration |
+| 🎨 **Focused Workbench UI** | Modern, responsive interface for conversations, workspace files, MCP, and skills |
 
 ## ⚙️ Configuration
 
@@ -184,7 +182,6 @@ PHANTOM has **25 built-in tools** that the AI uses autonomously:
 | `web_request` | HTTP requests for recon & API testing |
 | `search_web` | Web search via DuckDuckGo |
 | `scrape_webpage` | Fetch & parse webpage content |
-| `scrapling_fetch` | Advanced scraping — anti-bot bypass, Cloudflare, JS rendering ([Scrapling](https://github.com/D4Vinci/Scrapling)) |
 | `python_execute` | Execute Python code directly |
 | `save_memory` | Store findings to AgentMemory engine (4-tier taxonomy) |
 | `recall_memory` | Hybrid RRF search across persistent memory |
@@ -192,12 +189,6 @@ PHANTOM has **25 built-in tools** that the AI uses autonomously:
 | `edit_source_code` | Self-modify PHANTOM's own code |
 | `save_trace` | Log execution traces for self-optimization |
 | `jina_read_url` | Read any URL as clean Markdown |
-| `youtube_search` | Search YouTube videos |
-| `youtube_get_subtitles` | Extract YouTube video subtitles/transcripts |
-| `rss_read_feed` | Read any RSS/Atom feed |
-| `v2ex_browse` | Browse V2EX tech community |
-| `reddit_crawl` | Reddit search and post/thread reading |
-| `linkedin_crawl` | LinkedIn posts, jobs, and article reading |
 
 ## 🧪 Testing
 

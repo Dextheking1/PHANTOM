@@ -3,663 +3,82 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="PHANTOM — AI-Powered Pentesting Command Center. Your Swiss-army knife for red teaming and ethical hacking.">
-  <title>PHANTOM — AI Pentesting Command Center</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <meta name="description" content="PHANTOM — focused AI security workbench for authorised security engineering.">
+  <title>PHANTOM — Security Workbench</title>
   <link rel="stylesheet" href="css/styles.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👻</text></svg>">
 </head>
 <body>
-
-    <!-- Update Banner -->
-    <div id="update-banner" class="update-banner hidden">
-      <div class="update-banner-content">
-        <span class="update-icon">🚀</span>
-        <div class="update-text">
-          <span class="update-title">System Update Available</span>
-          <span id="update-message" class="update-subtitle">A new version of PHANTOM is available.</span>
-        </div>
-      </div>
-      <div>
-        <button type="button" id="btn-update-now" class="btn btn-primary btn-sm" aria-label="Update Now">Update Now</button>
-        <button type="button" id="btn-update-dismiss" class="btn-icon btn-sm" aria-label="Dismiss update">✕</button>
-      </div>
-    </div>
-
-  <!-- Matrix Rain Background -->
-  <canvas id="matrix-bg"></canvas>
-
   <div id="app">
-    <!-- Sidebar -->
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-header">
-        <div class="logo">
-          <span class="logo-icon">👻</span>
-          <span class="logo-text">PHANTOM</span>
-        </div>
-        <button type="button" id="new-chat-btn" class="btn-icon" title="New Chat" aria-label="New Chat">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 5v14M5 12h14"/>
-          </svg>
-        </button>
+        <div class="logo"><span class="logo-mark" aria-hidden="true">P</span><span class="logo-text">PHANTOM</span></div>
+        <button type="button" id="new-chat-btn" class="btn-icon" title="New chat" aria-label="New chat">＋</button>
       </div>
-
-      <div class="sidebar-search">
-        <input type="text" id="search-conversations" aria-label="Search conversations" placeholder="Search conversations..." />
-      </div>
-
-      <div id="conversation-list" class="conversation-list">
-        <!-- Conversations will be rendered here -->
-      </div>
-
+      <div class="sidebar-search"><input type="search" id="search-conversations" aria-label="Search conversations" placeholder="Search conversations…"></div>
+      <div id="conversation-list" class="conversation-list"></div>
       <div class="sidebar-footer">
-        <div id="system-status" class="system-status">
-          <span class="status-dot offline"></span>
-          <span class="status-text">Disconnected</span>
-        </div>
-        <button type="button" id="settings-btn" class="btn-icon" title="Settings" aria-label="Settings">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
-          </svg>
-        </button>
+        <div id="system-status" class="system-status"><span class="status-dot offline"></span><span class="status-text">Disconnected</span></div>
+        <button type="button" id="settings-btn" class="btn-icon" title="Settings" aria-label="Settings">⚙</button>
       </div>
     </aside>
 
-    <!-- Main Content -->
     <main id="main-content" class="main-content">
-      <!-- Top Bar -->
-      <div id="top-bar" class="top-bar">
-        <button type="button" id="sidebar-toggle" class="btn-icon" title="Toggle Sidebar" aria-label="Toggle Sidebar">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M3 12h18M3 6h18M3 18h18"/>
-          </svg>
-        </button>
+      <header id="top-bar" class="top-bar">
+        <button type="button" id="sidebar-toggle" class="btn-icon" title="Toggle sidebar" aria-label="Toggle sidebar">☰</button>
         <div class="top-bar-actions">
-          <button type="button" id="workspace-toggle-btn" class="btn btn-sm btn-secondary" title="Workspace Explorer" aria-label="Toggle Workspace Panel">📁 Workspace</button>
-          <button type="button" id="theme-toggle-btn" class="btn btn-sm btn-secondary" title="Toggle Theme" aria-label="Toggle Theme">🌓 Theme</button>
-          <button type="button" id="export-chat-btn" class="btn btn-sm btn-secondary" title="Export Chat" aria-label="Export Chat">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="7 10 12 15 17 10"></polyline>
-              <line x1="12" y1="15" x2="12" y2="3"></line>
-            </svg> Export
-          </button>
-          <button type="button" id="manage-btn" class="btn btn-sm btn-secondary" title="MCP &amp; Skills" aria-label="Manage MCP and Skills">🧩 Manage</button>
+          <button type="button" id="workspace-toggle-btn" class="btn btn-sm btn-secondary" aria-label="Toggle workspace">Workspace</button>
+          <button type="button" id="theme-toggle-btn" class="btn btn-sm btn-secondary" aria-label="Toggle theme">Theme</button>
+          <button type="button" id="export-chat-btn" class="btn btn-sm btn-secondary" aria-label="Export chat">Export</button>
+          <button type="button" id="manage-btn" class="btn btn-sm btn-secondary" aria-label="Open management">Manage</button>
         </div>
-        <div class="top-bar-info">
-          <span id="current-model" class="model-badge">No Model</span>
-          <span id="connection-status" class="connection-badge offline">● Offline</span>
-        </div>
-      </div>
+        <div class="top-bar-info"><span id="current-model" class="model-badge">No Model</span><span id="connection-status" class="connection-badge offline">● Offline</span></div>
+      </header>
 
-      <!-- Chat Area (also drop zone) -->
-      <div id="chat-area" class="chat-area">
-        <!-- Drop overlay -->
-        <div class="drop-overlay" id="drop-overlay">
-          <div class="drop-overlay-inner">
-            <span style="font-size:48px;">🖼️</span>
-            <p>Drop image to analyze</p>
-          </div>
-        </div>
-
-        <!-- Welcome Screen -->
+      <section id="chat-area" class="chat-area">
+        <div class="drop-overlay" id="drop-overlay"><div class="drop-overlay-inner"><span aria-hidden="true">＋</span><p>Drop an image to analyse</p></div></div>
         <div id="welcome-screen" class="welcome-screen">
-          <div class="welcome-ghost">👻</div>
-          <h1 class="welcome-title">PHANTOM</h1>
-          <p class="welcome-subtitle">AI-Powered Pentesting Command Center</p>
-          <div class="welcome-features">
-            <div class="feature-card">
-              <span class="feature-icon">🔍</span>
-              <span class="feature-text">Network Scanning &amp; Recon</span>
-            </div>
-            <div class="feature-card">
-              <span class="feature-icon">💉</span>
-              <span class="feature-text">Exploitation &amp; Payloads</span>
-            </div>
-            <div class="feature-card">
-              <span class="feature-icon">🌐</span>
-              <span class="feature-text">Web Access &amp; Research</span>
-            </div>
-            <div class="feature-card">
-              <span class="feature-icon">🔐</span>
-              <span class="feature-text">Password Cracking</span>
-            </div>
-            <div class="feature-card">
-              <span class="feature-icon">🕵️</span>
-              <span class="feature-text">Image Analysis</span>
-            </div>
-            <div class="feature-card">
-              <span class="feature-icon">♾️</span>
-              <span class="feature-text">Unlimited Tool Iterations</span>
-            </div>
+          <div class="welcome-kicker">SECURITY WORKBENCH <span aria-hidden="true">/</span> READY</div>
+          <div class="welcome-mark" aria-hidden="true">P</div>
+          <h1 class="welcome-title">Start with a clear objective.</h1>
+          <p class="welcome-subtitle">Investigate, document, and validate authorised security work from one focused workspace.</p>
+          <div class="quick-starts" aria-label="Quick start prompts">
+            <button type="button" class="quick-start" data-prompt="Help me scope an authorised security assessment for a target I own."><strong>Scope an assessment</strong><span>Define goals, boundaries, and evidence.</span></button>
+            <button type="button" class="quick-start" data-prompt="Review the files in my workspace and summarise the most important findings."><strong>Review workspace</strong><span>Find the signal in local reports and files.</span></button>
+            <button type="button" class="quick-start" data-prompt="Help me create a concise security finding report with impact and remediation."><strong>Write a finding</strong><span>Turn evidence into an actionable report.</span></button>
           </div>
-          <p class="welcome-hint">Configure your API key in <button type="button" id="welcome-settings-btn" class="inline-link" aria-label="Open Settings">Settings</button> to get started</p>
-          <p class="welcome-hint" style="margin-top:4px; color: var(--text-muted);">🖼️ Drag &amp; drop an image to analyze</p>
+          <p class="welcome-hint">Configure a provider in <button type="button" id="welcome-settings-btn" class="inline-link">Settings</button> to get started.</p>
         </div>
-
-        <!-- Messages Container -->
         <div id="messages" class="messages"></div>
-      </div>
+      </section>
 
-      <!-- Input Area -->
-      <div id="input-area" class="input-area">
-        <!-- Image preview bar (injected by app.js) -->
+      <section id="input-area" class="input-area">
         <div class="input-container">
-          <!-- image-upload-btn injected by app.js before textarea -->
-          <textarea
-            id="message-input"
-            aria-label="Message input"
-            placeholder="Ask PHANTOM anything... or drop an image (Ctrl+Enter to send)"
-            rows="1"
-            autofocus
-          ></textarea>
-          <button type="button" id="stop-btn" class="stop-btn" title="Stop AI (Abort)" style="display:none;" aria-label="Stop AI (Abort)">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-              <rect x="4" y="4" width="16" height="16" rx="2"/>
-            </svg>
-          </button>
-          <button type="button" id="send-btn" class="send-btn" title="Send Message (Ctrl+Enter)" aria-label="Send Message" disabled>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
-            </svg>
-          </button>
+          <textarea id="message-input" aria-label="Message input" placeholder="Describe the authorised security task…" rows="1" autofocus></textarea>
+          <button type="button" id="stop-btn" class="stop-btn" title="Stop operation" aria-label="Stop operation" style="display:none;">■</button>
+          <button type="button" id="send-btn" class="send-btn" title="Send message" aria-label="Send message" disabled>➤</button>
         </div>
-        <div class="input-footer">
-          <span class="input-hint">PHANTOM has full system access • Unlimited iterations • 🖼️ Drop image to analyze • Use responsibly</span>
-        </div>
-      </div>
+        <div class="input-footer"><span class="input-hint">Authorised use only • Ctrl/Cmd + Enter to send • Drop an image to analyse</span></div>
+      </section>
     </main>
 
-    <!-- Sudo Password Modal -->
-    <div id="sudo-modal" class="sudo-modal" style="display:none;">
-      <div class="sudo-modal-backdrop"></div>
-      <div class="sudo-modal-content">
-        <div class="sudo-modal-icon">🔑</div>
-        <h2 class="sudo-modal-title">Sudo Access</h2>
-        <p class="sudo-modal-desc">Enter your sudo password to grant PHANTOM elevated privileges for tool installation and system operations. This is validated once and stored in memory only.</p>
-        <div class="sudo-modal-input-wrap">
-          <input type="password" id="sudo-modal-password" aria-label="Sudo password" placeholder="Enter sudo password..." autocomplete="off" />
-          <button type="button" id="sudo-modal-toggle-eye" class="btn-icon-sm" title="Show/Hide" aria-label="Toggle password visibility">👁️</button>
-        </div>
-        <div id="sudo-modal-feedback" class="sudo-modal-feedback"></div>
-        <div class="sudo-modal-actions">
-          <button type="button" id="sudo-modal-validate" class="btn btn-primary" aria-label="Validate and Grant Access">🔓 Validate &amp; Grant Access</button>
-          <button type="button" id="sudo-modal-skip" class="btn btn-secondary" aria-label="Skip sudo access for now">Skip for now</button>
-        </div>
-      </div>
-    </div>
+    <div id="sudo-modal" class="sudo-modal" style="display:none;"><div class="sudo-modal-backdrop"></div><div class="sudo-modal-content"><div class="sudo-modal-icon">🔑</div><h2 class="sudo-modal-title">Sudo access</h2><p class="sudo-modal-desc">Provide temporary elevation only when required for an authorised operation.</p><div class="sudo-modal-input-wrap"><input type="password" id="sudo-modal-password" aria-label="Sudo password" placeholder="Sudo password" autocomplete="off"><button type="button" id="sudo-modal-toggle-eye" class="btn-icon-sm" aria-label="Toggle password visibility">◉</button></div><div id="sudo-modal-feedback" class="sudo-modal-feedback"></div><div class="sudo-modal-actions"><button type="button" id="sudo-modal-validate" class="btn btn-primary">Validate</button><button type="button" id="sudo-modal-skip" class="btn btn-secondary">Skip</button></div></div></div>
 
-    <!-- Settings Panel -->
-    <div id="settings-panel" class="settings-panel hidden">
-      <div class="settings-overlay" id="settings-overlay"></div>
-      <div class="settings-drawer">
-        <div class="settings-header">
-          <h2>⚙️ Settings</h2>
-          <button type="button" id="settings-close" class="btn-icon" aria-label="Close settings">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M18 6L6 18M6 6l12 12"/>
-            </svg>
-          </button>
-        </div>
+    <div id="settings-panel" class="settings-panel hidden"><div class="settings-overlay" id="settings-overlay"></div><div class="settings-drawer"><div class="settings-header"><h2>Settings</h2><button type="button" id="settings-close" class="btn-icon" aria-label="Close settings">×</button></div><div class="settings-body">
+      <section class="settings-section"><h3>Provider</h3><div class="form-group"><label for="setting-base-url">Base URL</label><input type="url" id="setting-base-url" placeholder="https://api.openai.com/v1"><small>Any OpenAI-compatible endpoint.</small></div><div class="form-group"><label for="setting-api-key">API key</label><div class="input-with-toggle"><input type="password" id="setting-api-key" placeholder="sk-…"><button type="button" id="toggle-api-key" class="btn-icon-sm" aria-label="Toggle API key visibility">◉</button></div></div><div class="form-group"><label for="setting-model">Model ID</label><input type="text" id="setting-model" placeholder="gpt-4o" list="model-suggestions"><datalist id="model-suggestions"><option value="gpt-4o"><option value="gpt-4o-mini"><option value="deepseek-chat"><option value="meta/llama-3.3-70b-instruct"></datalist></div><div class="form-row"><div class="form-group"><label for="setting-temperature">Temperature</label><input type="range" id="setting-temperature" min="0" max="2" step="0.1" value="0.7"><span id="temperature-value">0.7</span></div><div class="form-group"><label for="setting-max-tokens">Max tokens</label><input type="number" id="setting-max-tokens" value="4096" min="256" max="128000"></div></div><div class="form-actions"><button type="button" id="test-connection" class="btn btn-secondary">Test connection</button><span id="test-result" class="test-result"></span></div></section>
+      <section class="settings-section"><h3>Workspace</h3><div class="form-group"><label for="setting-workspace">Directory</label><input type="text" id="setting-workspace" placeholder="/home/user/phantom-workspace"><small>Working directory for reports, scripts, and file operations.</small></div></section>
+      <section class="settings-section"><h3>System access</h3><div class="form-group"><label for="setting-sudo-password">Sudo password</label><div class="input-with-toggle"><input type="password" id="setting-sudo-password" placeholder="Only when elevation is needed"><button type="button" id="toggle-sudo-pass" class="btn-icon-sm" aria-label="Toggle sudo password visibility">◉</button></div><small>Use only on a trusted local installation.</small></div></section>
+      <section class="settings-section"><h3>Custom behaviour</h3><div class="form-group"><label for="setting-system-prompt">System prompt</label><textarea id="setting-system-prompt" rows="6" placeholder="Leave empty to use the default."></textarea><button type="button" id="reset-system-prompt" class="btn btn-secondary btn-sm">Reset</button></div></section>
+      <section class="settings-section"><h3>MCP servers</h3><div id="mcp-server-list" class="mcp-list"><p class="mcp-empty">Manage servers from the Management panel.</p></div><button type="button" id="add-mcp-btn" class="btn btn-secondary btn-sm">Open management</button></section>
+      <div class="settings-footer"><button type="button" id="save-settings" class="btn btn-primary">Save Settings</button></div>
+    </div></div></div>
 
-        <div class="settings-body">
-          <!-- AI Doctor Section -->
-          <section class="settings-section">
-            <h3>🏥 AI Doctor</h3>
-            <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;line-height:1.6;">
-              A temporary AI assistant with its own API credentials that diagnoses and fixes system issues. Your main API key is not used.
-            </p>
-            <button type="button" id="ai-doctor-btn" class="btn btn-secondary" style="width:100%;justify-content:center;" aria-label="Launch AI Doctor">
-              🏥 Launch AI Doctor
-            </button>
-          </section>
+    <div id="update-progress-modal" class="ai-doctor-modal hidden"><div class="ai-doctor-overlay"></div><div class="ai-doctor-dialog"><div class="ai-doctor-header"><div><h2 class="ai-doctor-title">Updating PHANTOM</h2><p class="ai-doctor-subtitle">Applying the latest verified repository state…</p></div></div><pre id="update-log" class="doctor-config-screen"></pre></div></div>
+    <div id="preview-panel" class="preview-panel hidden"><div class="preview-header"><h2 id="preview-title" class="preview-title">Preview</h2><div class="preview-actions"><button type="button" id="preview-popout-btn" class="btn-icon" aria-label="Open preview in new window">⧉</button><button type="button" id="preview-refresh-btn" class="btn-icon" aria-label="Refresh preview">↻</button><button type="button" id="preview-close-btn" class="btn-icon" aria-label="Close preview">×</button></div></div><div class="preview-body"><iframe id="preview-iframe" sandbox="allow-scripts allow-forms allow-popups" title="Preview"></iframe></div></div>
 
-          <!-- API Configuration -->
-          <section class="settings-section">
-            <h3>🤖 API Configuration</h3>
-            <div class="form-group">
-              <label for="setting-base-url">Base URL</label>
-              <input type="url" id="setting-base-url" placeholder="https://api.openai.com/v1" />
-              <small>OpenAI, OpenRouter, Ollama, LM Studio, Nvidia (https://integrate.api.nvidia.com/v1), etc.</small>
-            </div>
-            <div class="form-group">
-              <label for="setting-api-key">API Key</label>
-              <div class="input-with-toggle">
-                <input type="password" id="setting-api-key" placeholder="sk-..." />
-                <button type="button" id="toggle-api-key" class="btn-icon-sm" title="Show/Hide" aria-label="Toggle API Key visibility">👁️</button>
-              </div>
-            </div>
-            <div class="form-group">
-              <label for="setting-model">Model ID</label>
-              <input type="text" id="setting-model" placeholder="gpt-4o" list="model-suggestions" />
-              <datalist id="model-suggestions">
-                <option value="meta/llama-3.3-70b-instruct">
-                <option value="nvidia/llama-3.1-nemotron-70b-instruct">
-                <option value="mistralai/mistral-large-2-instruct">
-                <option value="deepseek-ai/deepseek-r1">
-                <option value="gpt-4o">
-                <option value="gpt-4o-mini">
-                <option value="claude-3-5-sonnet-20241022">
-                <option value="deepseek-chat">
-                <option value="qwen/qwen-2.5-72b-instruct">
-              </datalist>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label for="setting-temperature">Temperature</label>
-                <input type="range" id="setting-temperature" min="0" max="2" step="0.1" value="0.7" />
-                <span id="temperature-value">0.7</span>
-              </div>
-              <div class="form-group">
-                <label for="setting-max-tokens">Max Tokens</label>
-                <input type="number" id="setting-max-tokens" value="4096" min="256" max="128000" />
-              </div>
-            </div>
-            <div class="form-actions">
-              <button type="button" id="test-connection" class="btn btn-secondary" aria-label="Test Connection">🔌 Test Connection</button>
-              <span id="test-result" class="test-result"></span>
-            </div>
-          </section>
+    <div id="manage-panel" class="manage-panel hidden"><div class="manage-overlay" id="manage-overlay"></div><div class="manage-drawer"><div class="manage-header"><h2>Management</h2><button type="button" id="manage-close" class="btn-icon" aria-label="Close management">×</button></div><div class="manage-tabs"><button type="button" class="manage-tab active" data-tab="mcp-tab">MCP servers</button><button type="button" class="manage-tab" data-tab="skills-tab">Skills</button></div><div class="manage-body"><div id="mcp-tab" class="manage-tab-content active"><p class="tab-desc">Connect trusted MCP servers to extend the workbench.</p><div id="manage-mcp-list" class="manage-list"></div><div class="manage-add-form" id="mcp-add-form" style="display:none;"><div class="form-group"><label for="mcp-name-input">Server name</label><input type="text" id="mcp-name-input"></div><div class="form-group"><label for="mcp-command-input">Command</label><input type="text" id="mcp-command-input"></div><div class="form-group"><label for="mcp-transport-input">Transport</label><select id="mcp-transport-input"><option value="stdio">stdio</option><option value="sse">SSE</option></select></div><div class="form-actions"><button type="button" id="mcp-save-btn" class="btn btn-primary btn-sm">Save server</button><button type="button" id="mcp-cancel-btn" class="btn btn-secondary btn-sm">Cancel</button></div></div><button type="button" id="manage-add-mcp" class="btn btn-secondary btn-sm">＋ Add server</button></div><div id="skills-tab" class="manage-tab-content"><p class="tab-desc">Import and manage skills stored in the workspace.</p><div id="skill-manager-root"></div><div id="manage-skills-list" class="manage-list" style="display:none;"></div><label class="btn btn-secondary btn-sm" for="skill-zip-input">Import skill (.zip)</label><input type="file" id="skill-zip-input" accept=".zip" style="display:none;"></div></div></div></div>
 
-                    <!-- Telegram Integration -->
-          <section class="settings-section">
-            <h3>📱 Telegram Integration</h3>
-            <div class="form-group" style="flex-direction: row; align-items: center; justify-content: space-between;">
-                <label for="setting-telegram-enable" style="margin-bottom: 0;">Enable Telegram Bot</label>
-                <label class="toggle-switch">
-                    <input type="checkbox" id="setting-telegram-enable">
-                    <span class="slider"></span>
-                </label>
-            </div>
-            <div id="telegram-fields" style="opacity: 0.5; pointer-events: none; transition: opacity 0.2s;">
-                <div class="form-group">
-                <label for="setting-telegram-token">Bot Token</label>
-                <div class="input-with-toggle">
-                    <input type="password" id="setting-telegram-token" placeholder="1234567890:ABCdef..." />
-                    <button type="button" id="toggle-telegram-token" class="btn-icon-sm" title="Show/Hide" aria-label="Toggle Telegram Bot Token visibility">👁️</button>
-                </div>
-                <small>Get from @BotFather on Telegram</small>
-                </div>
-                <div class="form-group">
-                <label for="setting-telegram-userid">Your User ID</label>
-                <input type="number" id="setting-telegram-userid" placeholder="8418185701" />
-                <small>Get your ID from @userinfobot on Telegram</small>
-                </div>
-            </div>
-            <div style="display: flex; align-items: center; gap: 12px; margin-top: 16px;">
-                <button type="button" id="save-telegram-btn" class="btn btn-secondary" aria-label="Save Telegram Bot Token and Restart">Save & Restart Bot</button>
-                <div id="telegram-status" style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary);">
-                    <span class="status-dot" style="background: gray;"></span> Not configured
-                </div>
-            </div>
-          </section>
-
-
-
-
-          <!-- Agent Reach — Internet Crawling -->
-          <section class="settings-section">
-            <h3>👁️ Agent Reach — Internet Access</h3>
-            <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;line-height:1.6;">
-              Configure cookies and credentials for social media platforms so the AI can crawl Twitter, Reddit, and more.
-            </p>
-            <div id="agent-reach-status" style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;">
-              <!-- Platform status badges will be injected by JS -->
-            </div>
-            <button type="button" id="agent-reach-btn" class="btn btn-secondary" style="width:100%;justify-content:center;" aria-label="Configure Agent Reach">
-              👁️ Configure Internet Platforms
-            </button>
-          </section>
-
-          <!-- System Access -->
-          <section class="settings-section">
-            <h3>🔑 System Access</h3>
-            <div class="form-group">
-              <label for="setting-sudo-password">Sudo Password</label>
-              <div class="input-with-toggle">
-                <input type="password" id="setting-sudo-password" placeholder="For tool installation &amp; privileged commands" />
-                <button type="button" id="toggle-sudo-pass" class="btn-icon-sm" title="Show/Hide" aria-label="Toggle Sudo Password visibility">👁️</button>
-              </div>
-              <small>Persisted securely in local database across restarts</small>
-            </div>
-          </section>
-
-          <!-- Workspace -->
-          <section class="settings-section">
-            <h3>📁 Workspace</h3>
-            <div class="form-group">
-              <label for="setting-workspace">Workspace Directory</label>
-              <input type="text" id="setting-workspace" placeholder="/home/user/phantom-workspace" />
-              <small>Default working directory for AI operations, scripts, saved files, and reports</small>
-            </div>
-          </section>
-
-          <!-- MCP Servers -->
-          <section class="settings-section">
-            <h3>🔌 MCP Servers</h3>
-            <div id="mcp-server-list" class="mcp-list">
-              <p class="mcp-empty">No MCP servers configured</p>
-            </div>
-            <button type="button" id="add-mcp-btn" class="btn btn-secondary btn-sm" aria-label="Add MCP Server">+ Add MCP Server</button>
-          </section>
-
-          <section class="settings-section">
-            <h3>🤖 SYSTEM PROMPT</h3>
-            <div class="form-group">
-              <label for="setting-system-prompt">Custom System Prompt (The Soul of the AI)</label>
-              <textarea id="setting-system-prompt" rows="6" placeholder="Leave empty to use default..." style="width: 100%; resize: vertical;"></textarea>
-              <button type="button" id="reset-system-prompt" class="btn btn-secondary btn-sm" aria-label="Reset System Prompt to Default" style="margin-top: 8px;">Reset to Default</button>
-            </div>
-          </section>
-
-          <!-- Save Button -->
-          <div class="settings-footer">
-            <button type="button" id="save-settings" class="btn btn-primary" aria-label="Save Settings">💾 Save Settings</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-
-    <!-- Update Progress Modal -->
-    <div id="update-progress-modal" class="ai-doctor-modal hidden" style="z-index: 9999;">
-      <div class="ai-doctor-overlay"></div>
-      <div class="ai-doctor-dialog">
-        <div class="ai-doctor-header">
-          <div class="ai-doctor-title-row">
-            <span class="ai-doctor-icon">🔄</span>
-            <div>
-              <h2 class="ai-doctor-title">Updating PHANTOM</h2>
-              <p class="ai-doctor-subtitle">Please wait while the system updates...</p>
-            </div>
-          </div>
-        </div>
-        <div class="doctor-config-screen" style="max-height: 400px; overflow-y: auto;">
-          <pre id="update-log" style="background: var(--bg-tertiary); padding: 10px; border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; margin: 0; min-height: 150px;"></pre>
-        </div>
-      </div>
-    </div>
-
-    <!-- AI Doctor Modal -->
-    <!-- Preview Panel for Visual Output -->
-    <div id="preview-panel" class="preview-panel hidden">
-      <div class="preview-header">
-        <h2 id="preview-title" class="preview-title">Preview</h2>
-        <div class="preview-actions">
-          <button type="button" id="preview-popout-btn" class="btn-icon" title="Open in new window" aria-label="Open in new window">⧉</button>
-          <button type="button" id="preview-refresh-btn" class="btn-icon" title="Refresh" aria-label="Refresh preview">🔄</button>
-          <button type="button" id="preview-close-btn" class="btn-icon" title="Close" aria-label="Close preview">✕</button>
-        </div>
-      </div>
-      <div class="preview-body">
-        <iframe id="preview-iframe" sandbox="allow-scripts allow-forms allow-popups" title="Preview Panel"></iframe>
-      </div>
-    </div>
-
-    <!-- AI Doctor Modal -->
-    <div id="ai-doctor-modal" class="ai-doctor-modal hidden">
-      <div class="ai-doctor-overlay" id="ai-doctor-overlay"></div>
-      <div class="ai-doctor-dialog">
-        <div class="ai-doctor-header">
-          <div class="ai-doctor-title-row">
-            <span class="ai-doctor-icon">🏥</span>
-            <div>
-              <h2 class="ai-doctor-title">AI Doctor</h2>
-              <p class="ai-doctor-subtitle">Temporary AI system diagnostics & repair</p>
-            </div>
-          </div>
-          <button type="button" id="ai-doctor-close" class="btn-icon" aria-label="Close AI Doctor">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M18 6L6 18M6 6l12 12"/>
-            </svg>
-          </button>
-        </div>
-
-        <!-- Config Screen -->
-        <div id="doctor-config-screen" class="doctor-config-screen">
-          <p class="doctor-config-desc">
-            🔒 Enter temporary API credentials — separate from your main PHANTOM config. These are used only for this session.
-          </p>
-          <div class="form-group">
-            <label for="doctor-base-url">Base URL</label>
-            <input type="url" id="doctor-base-url" placeholder="https://api.openai.com/v1" value="https://api.openai.com/v1" />
-          </div>
-          <div class="form-group">
-            <label for="doctor-api-key">API Key</label>
-            <div class="input-with-toggle">
-              <input type="password" id="doctor-api-key" placeholder="sk-..." />
-              <button type="button" id="doctor-toggle-key" class="btn-icon-sm" title="Show/Hide" aria-label="Toggle AI Doctor API Key visibility">👁️</button>
-            </div>
-          </div>
-          <div class="form-group">
-            <label for="doctor-model">Model ID</label>
-            <input type="text" id="doctor-model" placeholder="gpt-4o" value="gpt-4o" list="model-suggestions" />
-          </div>
-          <div id="doctor-config-feedback" class="doctor-config-feedback"></div>
-          <button type="button" id="doctor-start-btn" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px;" aria-label="Start Diagnosis">
-            🏥 Start Diagnosis
-          </button>
-        </div>
-
-        <!-- Chat Screen -->
-        <div id="doctor-chat-screen" class="doctor-chat-screen" style="display:none;">
-          <div id="doctor-messages" class="doctor-messages"></div>
-          <div class="doctor-input-row">
-            <input type="text" id="doctor-chat-input" placeholder="Ask the AI Doctor..." aria-label="Ask the AI Doctor" class="doctor-input" />
-            <button type="button" id="doctor-stop-btn" class="stop-btn" style="display:none;padding:8px;" aria-label="Stop AI Doctor">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
-            </button>
-            <button type="button" id="doctor-send-btn" class="send-btn" aria-label="Send message to AI Doctor">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
-              </svg>
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Agent Reach Configuration Modal -->
-    <div id="agent-reach-modal" class="ai-doctor-modal hidden" style="z-index: 9998;">
-      <div class="ai-doctor-overlay" id="agent-reach-overlay"></div>
-      <div class="ai-doctor-dialog" style="max-width: 600px;">
-        <div class="ai-doctor-header">
-          <div class="ai-doctor-title-row">
-            <span class="ai-doctor-icon">👁️</span>
-            <div>
-              <h2 class="ai-doctor-title">Agent Reach</h2>
-              <p class="ai-doctor-subtitle">Configure social media access for AI internet crawling</p>
-            </div>
-          </div>
-          <button type="button" id="agent-reach-close" class="btn-icon" aria-label="Close Agent Reach">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M18 6L6 18M6 6l12 12"/>
-            </svg>
-          </button>
-        </div>
-
-        <div class="doctor-config-screen" style="max-height: 70vh; overflow-y: auto; padding: 20px;">
-          <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; line-height: 1.6;">
-            Paste cookies from <a href="https://chromewebstore.google.com/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm" target="_blank" style="color: #818cf8;">Cookie-Editor</a> Chrome extension. Export as <strong>Header String</strong> format.
-          </p>
-
-          <!-- Reddit -->
-          <div class="ar-platform" data-platform="reddit">
-            <div class="ar-platform-header">
-              <span class="ar-platform-icon">📖</span>
-              <div class="ar-platform-info">
-                <strong>Reddit</strong>
-                <small>Search subreddits, read posts and comments</small>
-              </div>
-              <span class="ar-platform-badge" id="ar-status-reddit">Not configured</span>
-            </div>
-            <div class="form-group" style="margin-top: 10px;">
-              <label for="ar-cookie-reddit">Cookie (Header String)</label>
-              <textarea id="ar-cookie-reddit" rows="2" placeholder='Paste cookie string from Cookie-Editor...' style="width:100%;resize:vertical;font-family:var(--font-mono);font-size:12px;"></textarea>
-            </div>
-            <button type="button" class="btn btn-secondary btn-sm ar-save-btn" data-platform="reddit" aria-label="Save Reddit Cookie">💾 Save Reddit</button>
-          </div>
-
-          <!-- XiaoHongShu -->
-          <div class="ar-platform" data-platform="xiaohongshu">
-            <div class="ar-platform-header">
-              <span class="ar-platform-icon">📕</span>
-              <div class="ar-platform-info">
-                <strong>XiaoHongShu (小红书)</strong>
-                <small>Search, read posts and comments</small>
-              </div>
-              <span class="ar-platform-badge" id="ar-status-xiaohongshu">Not configured</span>
-            </div>
-            <div class="form-group" style="margin-top: 10px;">
-              <label for="ar-cookie-xiaohongshu">Cookie (Header String)</label>
-              <textarea id="ar-cookie-xiaohongshu" rows="2" placeholder='Paste cookie string from Cookie-Editor...' style="width:100%;resize:vertical;font-family:var(--font-mono);font-size:12px;"></textarea>
-            </div>
-            <button type="button" class="btn btn-secondary btn-sm ar-save-btn" data-platform="xiaohongshu" aria-label="Save XiaoHongShu Cookie">💾 Save XiaoHongShu</button>
-          </div>
-
-          <!-- LinkedIn -->
-          <div class="ar-platform" data-platform="linkedin">
-            <div class="ar-platform-header">
-              <span class="ar-platform-icon">💼</span>
-              <div class="ar-platform-info">
-                <strong>LinkedIn</strong>
-                <small>Read profiles, company pages, job search</small>
-              </div>
-              <span class="ar-platform-badge" id="ar-status-linkedin">Not configured</span>
-            </div>
-            <div class="form-group" style="margin-top: 10px;">
-              <label for="ar-cookie-linkedin">Cookie (Header String)</label>
-              <textarea id="ar-cookie-linkedin" rows="2" placeholder='Paste cookie string from Cookie-Editor...' style="width:100%;resize:vertical;font-family:var(--font-mono);font-size:12px;"></textarea>
-            </div>
-            <button type="button" class="btn btn-secondary btn-sm ar-save-btn" data-platform="linkedin" aria-label="Save LinkedIn Cookie">💾 Save LinkedIn</button>
-          </div>
-
-          <div style="margin-top: 16px; padding: 12px; background: rgba(129,140,248,0.1); border: 1px solid rgba(129,140,248,0.2); border-radius: 8px;">
-            <p style="font-size: 12px; color: var(--text-secondary); margin: 0; line-height: 1.5;">
-              🔒 <strong>Privacy:</strong> Cookies are stored locally in your PHANTOM database only. Never uploaded or transmitted externally.<br>
-              ⚠️ <strong>Tip:</strong> Use a secondary/burner account for each platform to avoid any risk to your main accounts.
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Management Panel (MCP + Skills) -->
-    <div id="manage-panel" class="manage-panel hidden">
-      <div class="manage-overlay" id="manage-overlay"></div>
-      <div class="manage-drawer">
-        <div class="manage-header">
-          <h2>🧩 Management</h2>
-          <button type="button" id="manage-close" class="btn-icon" aria-label="Close management panel">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M18 6L6 18M6 6l12 12"/>
-            </svg>
-          </button>
-        </div>
-
-        <!-- Tabs -->
-        <div class="manage-tabs">
-          <button type="button" class="manage-tab active" data-tab="mcp-tab" aria-label="MCP Servers Tab">🔌 MCP Servers</button>
-          <button type="button" class="manage-tab" data-tab="skills-tab" aria-label="Skills Tab">🧠 Skills</button>
-          <button type="button" class="manage-tab" data-tab="analysis-tab" aria-label="Analysis Tab">🛡️ Analysis</button>
-        </div>
-
-        <div class="manage-body">
-          <!-- MCP Tab -->
-          <div id="mcp-tab" class="manage-tab-content active">
-            <p class="tab-desc">Configure Model Context Protocol servers to extend AI capabilities.</p>
-            <div id="manage-mcp-list" class="manage-list"></div>
-            <div class="manage-add-form" id="mcp-add-form" style="display:none;">
-              <div class="form-group">
-                <label for="mcp-name-input">Server Name</label>
-                <input type="text" id="mcp-name-input" placeholder="e.g. filesystem-server" />
-              </div>
-              <div class="form-group">
-                <label for="mcp-command-input">Command</label>
-                <input type="text" id="mcp-command-input" placeholder="e.g. npx -y @modelcontextprotocol/server-filesystem /home" />
-              </div>
-              <div class="form-group">
-                <label for="mcp-transport-input">Transport</label>
-                <select id="mcp-transport-input">
-                  <option value="stdio">stdio</option>
-                  <option value="sse">SSE</option>
-                </select>
-              </div>
-              <div class="form-actions">
-                <button type="button" id="mcp-save-btn" class="btn btn-primary btn-sm" aria-label="Save MCP Server">💾 Save Server</button>
-                <button type="button" id="mcp-cancel-btn" class="btn btn-secondary btn-sm" aria-label="Cancel MCP Server creation">Cancel</button>
-              </div>
-            </div>
-            <button type="button" id="manage-add-mcp" class="btn btn-secondary btn-sm" style="margin-top:10px;" aria-label="Add MCP Server">+ Add MCP Server</button>
-          </div>
-
-          <!-- Skills Tab -->
-          <div id="skills-tab" class="manage-tab-content">
-            <p class="tab-desc">Import and manage AI skills. Skills are stored in your workspace.</p>
-            <div id="skill-manager-root"></div>
-            <div id="manage-skills-list" class="manage-list" style="display:none;"></div>
-            <div class="manage-skill-actions" style="margin-top: 15px;">
-              <label class="btn btn-secondary btn-sm" for="skill-zip-input">📦 Import Skill (.zip)</label>
-              <input type="file" id="skill-zip-input" accept=".zip" style="display:none;" />
-            </div>
-          </div>
-
-          <!-- Analysis Dashboard Tab -->
-          <div id="analysis-tab" class="manage-tab-content">
-            <div id="analysis-dashboard-root"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  <!-- Workspace Explorer Right Panel (Resizable & Side-by-Side Flex Layout) -->
-  <aside id="workspace-panel" class="workspace-panel hidden">
-    <div id="workspace-resizer" class="workspace-resizer" title="Drag to resize panel"></div>
-
-    <div class="workspace-panel-header">
-      <div class="workspace-panel-nav">
-        <button type="button" id="ws-nav-back" class="btn-icon-sm" title="Go back" disabled>◀</button>
-        <button type="button" id="ws-nav-forward" class="btn-icon-sm" title="Go forward" disabled>▶</button>
-      </div>
-      <div class="workspace-panel-title">
-        <span class="workspace-icon">📁</span>
-        <span id="ws-header-title">Workspace</span>
-      </div>
-      <div class="workspace-panel-actions">
-        <button type="button" id="workspace-refresh-btn" class="btn-icon-sm" title="Refresh files">🔄</button>
-        <button type="button" id="workspace-close-btn" class="btn-icon-sm" title="Close panel">✕</button>
-      </div>
-    </div>
-
-    <div class="workspace-search-bar">
-      <input type="text" id="workspace-search-input" placeholder="🔍 Search workspace files..." />
-    </div>
-
-    <div class="workspace-panel-body">
-      <div id="workspace-tree" class="workspace-tree">
-        <!-- Tree rendered dynamically -->
-      </div>
-    </div>
-
-    <div id="workspace-file-viewer" class="workspace-file-viewer hidden">
-      <div class="workspace-viewer-header">
-        <button type="button" id="viewer-back-btn" class="btn btn-xs btn-secondary" title="Back to Explorer">← Explorer</button>
-        <span id="viewer-filename" class="viewer-filename">file.js</span>
-        <div class="viewer-actions">
-          <button type="button" id="viewer-copy-btn" class="btn-icon-sm" title="Copy file content">📋</button>
-          <button type="button" id="viewer-close-btn" class="btn-icon-sm" title="Close file">✕</button>
-        </div>
-      </div>
-      <div id="viewer-body" class="viewer-body">
-        <pre id="viewer-content" class="viewer-content"><code></code></pre>
-        <div id="viewer-markdown" class="viewer-markdown hidden"></div>
-      </div>
-    </div>
-  </aside>
+    <aside id="workspace-panel" class="workspace-panel hidden"><div id="workspace-resizer" class="workspace-resizer" title="Resize workspace"></div><div class="workspace-panel-header"><div class="workspace-panel-nav"><button type="button" id="ws-nav-back" class="btn-icon-sm" title="Go back" disabled>‹</button><button type="button" id="ws-nav-forward" class="btn-icon-sm" title="Go forward" disabled>›</button></div><div class="workspace-panel-title"><span id="ws-header-title">Workspace</span></div><div class="workspace-panel-actions"><button type="button" id="workspace-refresh-btn" class="btn-icon-sm" title="Refresh workspace">↻</button><button type="button" id="workspace-close-btn" class="btn-icon-sm" title="Close workspace">×</button></div></div><div class="workspace-search-bar"><input type="search" id="workspace-search-input" placeholder="Search workspace files…"></div><div class="workspace-panel-body"><div id="workspace-tree" class="workspace-tree"></div></div><div id="workspace-file-viewer" class="workspace-file-viewer hidden"><div class="workspace-viewer-header"><button type="button" id="viewer-back-btn" class="btn btn-xs btn-secondary">← Explorer</button><span id="viewer-filename" class="viewer-filename">file</span><div class="viewer-actions"><button type="button" id="viewer-copy-btn" class="btn-icon-sm" aria-label="Copy file">▣</button><button type="button" id="viewer-close-btn" class="btn-icon-sm" aria-label="Close file">×</button></div></div><div id="viewer-body" class="viewer-body"><pre id="viewer-content" class="viewer-content"><code></code></pre><div id="viewer-markdown" class="viewer-markdown hidden"></div></div></div></aside>
   </div>
-
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

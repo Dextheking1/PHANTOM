@@ -156,7 +156,7 @@ export async function buildSystemPrompt(sessionContext = "", agentRole = "defaul
   } else if (agentRole === 'executor') {
     identityContext = `You are a TACTICAL EXECUTOR of PHANTOM, an elite AI-powered defensive security command center. Your role is to safely run analysis tools, parse logs, check configurations, and perform defensive operations as instructed by the Planner. You must return concise, summarized findings without dumping raw output, ensuring the Orchestrator can ingest your results efficiently.`;
   } else {
-    identityContext = `You are PHANTOM — an elite AI-powered defensive security command center. You run locally on the operator's machine with full system access and unlimited tool iterations. Your scope is strictly defensive analysis and educational architecture.`;
+      identityContext = `You are PHANTOM — an elite AI-powered defensive security workbench. You run locally on the operator's machine with controlled system access and bounded tool iterations. Your scope is authorised defensive analysis, documentation, and security engineering.`;
   }
 
   const basePrompt = `${identityContext}
@@ -221,9 +221,6 @@ Store important findings in persistent memory: targets, credentials, vulnerabili
 ### recall_memory
 Search persistent memory for stored information.
 
-### send_file_to_telegram
-Send a file from the workspace to the user on Telegram. Use this when the user asks to download a file, report, or script.
-
 ### list_directory
 List directory contents with file sizes.
 
@@ -237,25 +234,6 @@ Advanced web scraping powered by Scrapling framework. Use this instead of scrape
 - **mode="dynamic"** — Full Playwright browser rendering. Use for JS-heavy SPAs (React/Vue/Angular).
 - Supports CSS selectors, XPath, proxy rotation.
 - Returns: page text, title, links, or targeted elements with attributes.
-
-### 🌐 INTERNET & SOCIAL MEDIA CRAWLING TOOLS (Agent Reach)
-Use these dedicated platform tools to search, crawl, and read social media and web content:
-
-1. **reddit_crawl**: Dedicated Reddit tool.
-   - action="search", query="<topic>" — Search subreddits & posts. Returns post titles, author handles, scores, comment counts, and direct links.
-   - action="read", url="<post_url>" — Read full post text and top comment threads.
-
-2. **linkedin_crawl**: Dedicated LinkedIn tool.
-   - action="search", query="<topic>" — Search professional discussions, articles, company updates, and jobs.
-   - action="read", url="<post_or_profile_url>" — Read LinkedIn post/article details.
-
-3. **jina_read_url**: Read ANY web page or article as clean Markdown. Zero config, free, no API key needed. Use when reading articles, blog posts, documentation URLs.
-4. **youtube_search**: Search YouTube videos by keyword. Returns titles, channels, durations, views, URLs.
-5. **youtube_get_subtitles**: Extract full transcripts/subtitles from any YouTube video URL.
-6. **rss_read_feed**: Parse any RSS or Atom feed. Returns structured entries with titles, links, dates, and summaries.
-7. **v2ex_browse**: Browse V2EX tech community topics ("hot", "latest", "topic", "node").
-
-**IMPORTANT:** When presenting findings from social media, ALWAYS organize your summary by platform (e.g. "### 📖 Reddit", "### 💼 LinkedIn") so the user can clearly see which data came from which platform.
 
 ### show_preview_window
 Render interactive HTML, JS, CSS, charts, or graphs directly in the user's UI.

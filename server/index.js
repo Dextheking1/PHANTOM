@@ -3,7 +3,6 @@ import { WebSocketServer } from 'ws';
 import app from './app.js';
 import config from './config.js';
 import { processMessage } from './ai/llm-client.js';
-import { startBot } from './telegram/bot.js';
 import { createConversation } from './memory/store.js';
 import { timingSafeEqual } from 'crypto';
 
@@ -182,5 +181,4 @@ server.listen(PORT, config.server.host, () => {
       isDev: process.env.PHANTOM_DEV === 'true',
     });
   }
-  startBot();
 });
