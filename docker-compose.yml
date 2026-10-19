@@ -4,12 +4,12 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       - ./workspace:/app/workspace
-    env_file:
-      - .env
     environment:
+      - NODE_ENV=production
+      - HOST=0.0.0.0
+      - PHANTOM_LOCAL_MODE=true
       - PORT=3000
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_USER_ID=${TELEGRAM_USER_ID}
+      - API_TOKEN=${API_TOKEN}

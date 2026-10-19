@@ -31,7 +31,7 @@ const upload = multer({ dest: '/tmp/phantom-uploads/', limits: { fileSize: 50 * 
 router.use((req, res, next) => {
   const token = config.server.apiToken || process.env.API_TOKEN || '';
   const localOnly = ['127.0.0.1', '::1', 'localhost'].includes(config.server.host);
-  if (!token && localOnly && process.env.NODE_ENV !== 'production') return next();
+  if (!token && (process.env.PHANTOM_LOCAL_MODE === 'true' || (localOnly && process.env.NODE_ENV !== 'production'))) return next();
   if (!token) return res.status(503).json({ error: 'API_TOKEN must be configured for non-local or production use' });
 
   const authHeader = req.headers.authorization;
