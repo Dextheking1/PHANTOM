@@ -407,26 +407,32 @@ async function executeCommand({ command, timeout = 120, working_directory, use_s
       }
     });
 
-    proc.on('close', (code) => {
-      let result = '';
-      if (stdout) result += stdout;
-      if (stderr) result += (result ? '\n' : '') + `[STDERR] ${stderr}`;
-      if (code !== 0 && code !== null) result += `\n[EXIT CODE] ${code}`;
-      resolvePromise(result || `Command completed with exit code ${code}`);
-    });
+    let settled = false;
+    let timeoutHandle;
+    const settle = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutHandle);
+      resolvePromise(value);
+    };
 
-    proc.on('error', (err) => {
-      resolvePromise(`Error executing command: ${err.message}`);
-    });
-
-    setTimeout(() => {
+    timeoutHandle = setTimeout(() => {
       try {
         proc.kill('SIGTERM');
       } catch (err) {
         console.warn(`Failed to kill process: ${err.message}`);
       }
-      resolvePromise(stdout + stderr + `\n[TIMEOUT] Command timed out after ${timeout}s`);
+      settle(stdout + stderr + `\n[TIMEOUT] Command timed out after ${timeout}s`);
     }, timeout * 1000);
+
+    proc.on('close', (code) => {
+      let result = '';
+      if (stdout) result += stdout;
+      if (stderr) result += (result ? '\n' : '') + `[STDERR] ${stderr}`;
+      if (code !== 0 && code !== null) result += `\n[EXIT CODE] ${code}`;
+      settle(result || `Command completed with exit code ${code}`);
+    });
+    proc.on('error', (err) => settle(`Error executing command: ${err.message}`));
   });
 }
 
@@ -528,8 +534,8 @@ async function installTool({ name, method = 'auto', source }) {
 }
 
 function detectPackageManager() {
-  const paths = (process.env.PATH || '').split(path.delimiter);
-  const findCmd = (cmd) => paths.some(p => existsSync(path.join(p, cmd)));
+  const paths = (process.env.PATH || '').split(delimiter);
+  const findCmd = (cmd) => paths.some(p => existsSync(join(p, cmd)));
 
   if (findCmd('apt-get')) return 'apt';
   if (findCmd('pacman')) return 'pacman';

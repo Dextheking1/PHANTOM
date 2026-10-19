@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import config, { updateConfig } from '../config.js';
+import { timingSafeEqual } from 'crypto';
 import { resetClient, testConnection } from '../ai/llm-client.js';
 import {
   createConversation, getConversations, getConversation, deleteConversation,
@@ -29,14 +30,17 @@ const upload = multer({ dest: '/tmp/phantom-uploads/', limits: { fileSize: 50 * 
 
 // ─── Authentication Middleware ───
 router.use((req, res, next) => {
-  const token = process.env.API_TOKEN;
-  if (!token) return next();
+  const token = config.server.apiToken || process.env.API_TOKEN || '';
+  const localOnly = ['127.0.0.1', '::1', 'localhost'].includes(config.server.host);
+  if (!token && localOnly && process.env.NODE_ENV !== 'production') return next();
+  if (!token) return res.status(503).json({ error: 'API_TOKEN must be configured for non-local or production use' });
 
   const authHeader = req.headers.authorization;
-  const queryToken = req.query.token;
-  const provided = authHeader ? authHeader.replace(/^Bearer\s+/i, '') : queryToken;
+  const provided = authHeader ? authHeader.replace(/^Bearer\s+/i, '') : '';
 
-  if (!provided || provided !== token) {
+  const actual = Buffer.from(provided);
+  const expected = Buffer.from(token);
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
     return res.status(401).json({ error: 'Unauthorized: Invalid or missing API_TOKEN' });
   }
   next();

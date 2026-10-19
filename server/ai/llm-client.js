@@ -158,8 +158,9 @@ async function checkNvidiaRateLimit() {
   }
 }
 
-  // Unlimited tool calling loop — runs until AI stops or abort signal fires
-  while (true) {
+  const maxToolIterations = Math.max(1, config.limits?.maxToolIterations || 12);
+  let toolIterations = 0;
+  while (toolIterations < maxToolIterations) {
     // Check if aborted
     if (abortSignal?.aborted) {
       const abortMsg = '[PHANTOM] ⏹ Operation stopped by user.';
@@ -306,6 +307,7 @@ async function checkNvidiaRateLimit() {
 
       // If we have tool calls, execute them
       if (toolCalls.length > 0) {
+        toolIterations += 1;
         // Save assistant message with tool calls
         const assistantMsg = { role: 'assistant', content: fullContent || null, tool_calls: sanitizeToolCalls(toolCalls) };
         addMessage(conversationId, assistantMsg);
@@ -392,6 +394,11 @@ async function checkNvidiaRateLimit() {
       return errMsg;
     }
   }
+
+  const limitMsg = `[PHANTOM] Tool-call limit reached (${maxToolIterations}). Please review the partial result and continue with a narrower request.`;
+  onChunk(limitMsg);
+  addMessage(conversationId, { role: 'assistant', content: limitMsg });
+  return limitMsg;
 }
 
 /**

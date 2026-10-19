@@ -17,10 +17,12 @@ loadPersistedSettings(getSetting);
 const app = express();
 
 // Security and proxy configuration
-if (process.env.NODE_ENV === 'production' && process.env.TRUST_PROXY) {
+if (process.env.NODE_ENV === 'test') {
+  app.set('trust proxy', 1);
+} else if (process.env.NODE_ENV === 'production' && process.env.TRUST_PROXY) {
   app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? true : parseInt(process.env.TRUST_PROXY, 10));
 } else {
-  app.set('trust proxy', 1);
+  app.set('trust proxy', false);
 }
 
 import rateLimit from 'express-rate-limit';
@@ -35,7 +37,11 @@ import helmet from 'helmet';
 
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use('/api', apiLimiter);
-app.use(cors());
+const allowedOrigins = (process.env.CORS_ORIGIN || '').split(',').map(value => value.trim()).filter(Boolean);
+app.use(cors({
+  origin: allowedOrigins.length > 0 ? allowedOrigins : false,
+  credentials: false,
+}));
 app.use(express.json({ limit: '5mb' }));
 
 // Static frontend serving

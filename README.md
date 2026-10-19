@@ -12,7 +12,7 @@
 [![Hlido trust score](https://hlido.eu/badge/omyarewar110-phantom.svg)](https://hlido.eu/check/?agent=omyarewar110-phantom)
 
 **An autonomous AI assistant for penetration testing, security research, and general-purpose tasks.**  
-Real-time tool execution • Unlimited autonomous operations • Self-improving AI • Beautiful dark UI
+Real-time tool execution • Bounded autonomous operations • Self-improving AI • Beautiful dark UI
 
 <img src="https://img.shields.io/badge/Status-Active-22c55e?style=flat-square" />
 <img src="https://img.shields.io/badge/Security-Offensive-ef4444?style=flat-square" />
@@ -83,7 +83,7 @@ npm test
 ## 🤔 Why PHANTOM?
 
 - **Zero-Config Tool Execution:** Tools automatically install system dependencies and parse outputs cleanly, so the AI never gets stuck missing a library.
-- **Unbounded Agent Loops:** Unlike standard chat UIs, PHANTOM allows the LLM to call tools recursively until the goal is achieved without needing constant human prompting.
+- **Bounded Agent Loops:** PHANTOM can call tools autonomously while enforcing a configurable iteration limit to prevent runaway jobs.
 - **Persistent Context:** The integrated SQLite memory store gives your agent long-term recall across sessions, preventing repetitive scanning or reconnaissance.
 
 ## ✨ Features
@@ -93,9 +93,9 @@ npm test
 | 🛡️ **Multi-Agent Defense** | Orchestrator, Planner, and Specialist Agents (Log, Compliance, Threat Modeler) working in parallel via Task Graphs |
 | 🤖 **Any LLM Backend** | OpenAI, OpenRouter, Ollama, LM Studio, DeepSeek, Claude — any OpenAI-compatible API |
 | ⚡ **Real-Time Streaming** | Live tool execution output, typing animations, and AI thinking display |
-| 🔓 **Unlimited Operations** | No tool call limits — PHANTOM runs autonomously until the task is done |
+| 🛡️ **Safe Defaults** | Localhost-only binding by default, authenticated remote mode, message limits, and bounded tool loops |
 | 🧠 **Self-Improving** | Creates its own tools, saves execution traces, learns from past runs |
-| 🔑 **Secure Sudo** | One-time sudo password with system validation — persisted securely |
+| 🔑 **Sudo Controls** | Optional sudo validation; avoid enabling remote access without a strong API token |
 | 📁 **Workspace System** | Configurable workspace directory for scripts, reports, and file operations |
 | 🧩 **MCP Server Hub** | Native Model Context Protocol infrastructure supporting typed JSON schemas and rate-limited endpoints |
 | 📦 **Skills System** | Trust-tiered SKILL.md packages utilizing `isolated-vm` sandboxing |
@@ -114,7 +114,10 @@ Edit `.env` or configure via the Web UI Settings panel:
 # OpenAI
 API_BASE_URL=https://api.openai.com/v1
 API_KEY=sk-your-key-here
-MODEL_ID=gpt-4o
+API_MODEL=gpt-4o
+HOST=127.0.0.1
+# Required for production or non-local binding
+# API_TOKEN=replace-with-a-long-random-token
 
 # OpenRouter (access to 100+ models)
 API_BASE_URL=https://openrouter.ai/api/v1

@@ -5,9 +5,19 @@ import config from './config.js';
 import { processMessage } from './ai/llm-client.js';
 import { startBot } from './telegram/bot.js';
 import { createConversation } from './memory/store.js';
+import { timingSafeEqual } from 'crypto';
 
 const server = createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
+
+function isAuthorized(request) {
+  const expected = config.server.apiToken || process.env.API_TOKEN || '';
+  if (!expected) return config.server.host === '127.0.0.1' || config.server.host === 'localhost' || config.server.host === '::1';
+  const provided = request.headers.authorization?.replace(/^Bearer\s+/i, '') || '';
+  const actual = Buffer.from(provided);
+  const target = Buffer.from(expected);
+  return actual.length === target.length && timingSafeEqual(actual, target);
+}
 
 // Handle server errors (e.g. EADDRINUSE)
 server.on('error', (err) => {
@@ -38,7 +48,11 @@ wss.on('close', () => {
   clearInterval(heartbeatInterval);
 });
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, request) => {
+  if (!isAuthorized(request)) {
+    ws.close(1008, 'Unauthorized');
+    return;
+  }
   ws.isAlive = true;
   ws.on('pong', () => {
     ws.isAlive = true;
@@ -51,8 +65,17 @@ wss.on('connection', (ws) => {
 
   const abortController = new AbortController();
 
+  let processing = false;
   ws.on('message', async (data) => {
     try {
+      if (Buffer.byteLength(data) > (config.limits?.maxWebSocketMessageBytes || 262144)) {
+        ws.close(1009, 'Message too large');
+        return;
+      }
+      if (processing) {
+        ws.send(JSON.stringify({ type: 'error', message: 'A request is already running on this connection.' }));
+        return;
+      }
       const payload = JSON.parse(data);
       if (payload?.type === 'ping') {
         ws.isAlive = true;
@@ -84,6 +107,7 @@ wss.on('connection', (ws) => {
         ws.send(JSON.stringify({ type: 'response_start', conversationId }));
       }
 
+      processing = true;
       await processMessage(
         conversationId,
         messageText,
@@ -135,6 +159,8 @@ wss.on('connection', (ws) => {
       if (ws.readyState === 1) {
         ws.send(JSON.stringify({ type: 'error', message: err.message }));
       }
+    } finally {
+      processing = false;
     }
   });
 
@@ -146,7 +172,7 @@ wss.on('connection', (ws) => {
 import { printBanner } from './banner.js';
 
 const PORT = config.port || config.server?.port || 1337;
-server.listen(PORT, () => {
+server.listen(PORT, config.server.host, () => {
   if (!process.env.PHANTOM_SILENT_BANNER) {
     printBanner({
       port: PORT,
