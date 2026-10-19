@@ -11,7 +11,12 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 
 function isAuthorized(request) {
   const expected = config.server.apiToken || process.env.API_TOKEN || '';
-  if (!expected) return config.server.host === '127.0.0.1' || config.server.host === 'localhost' || config.server.host === '::1';
+  if (!expected) {
+    return process.env.PHANTOM_LOCAL_MODE === 'true' ||
+      config.server.host === '127.0.0.1' ||
+      config.server.host === 'localhost' ||
+      config.server.host === '::1';
+  }
   const provided = request.headers.authorization?.replace(/^Bearer\s+/i, '') || '';
   const actual = Buffer.from(provided);
   const target = Buffer.from(expected);

@@ -478,6 +478,8 @@ html, body {
 .input-with-toggle input { flex: 1; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .form-actions { display: flex; align-items: center; gap: 10px; }
+.auto-token-toggle { display: flex; align-items: center; gap: 6px; margin-top: 7px; font-size: 11px; color: var(--text-muted); cursor: pointer; }
+.auto-token-toggle input { accent-color: var(--accent); }
 .test-result { font-size: 12px; font-family: var(--font-mono); }
 .test-result.success { color: var(--accent); }
 .test-result.error { color: var(--danger); }

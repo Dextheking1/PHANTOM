@@ -13,6 +13,15 @@ window.Settings = {
     const temp = document.getElementById('setting-temperature');
     const tempValue = document.getElementById('temperature-value');
     temp?.addEventListener('input', () => { tempValue.textContent = temp.value; });
+    const model = document.getElementById('setting-model');
+    const maxTokens = document.getElementById('setting-max-tokens');
+    const autoTokens = document.getElementById('setting-auto-tokens');
+    const syncAutoTokens = () => {
+      if (!autoTokens?.checked || !maxTokens) return;
+      maxTokens.value = this.recommendedMaxTokens(model?.value);
+    };
+    model?.addEventListener('input', syncAutoTokens);
+    autoTokens?.addEventListener('change', syncAutoTokens);
     document.getElementById('toggle-api-key')?.addEventListener('click', () => this.toggle('setting-api-key'));
     document.getElementById('toggle-sudo-pass')?.addEventListener('click', () => this.toggle('setting-sudo-password'));
     document.getElementById('test-connection')?.addEventListener('click', () => this.testConnection());
@@ -58,6 +67,8 @@ window.Settings = {
         'setting-system-prompt': data.systemPrompt || '',
       };
       Object.entries(values).forEach(([id, value]) => { const el = document.getElementById(id); if (el) el.value = value; });
+      const autoTokens = document.getElementById('setting-auto-tokens');
+      if (autoTokens) autoTokens.checked = false;
       const tempValue = document.getElementById('temperature-value');
       if (tempValue) tempValue.textContent = values['setting-temperature'];
       const model = document.getElementById('current-model');
@@ -75,7 +86,9 @@ window.Settings = {
       baseUrl: document.getElementById('setting-base-url')?.value,
       model: document.getElementById('setting-model')?.value,
       temperature: Number(document.getElementById('setting-temperature')?.value || 0.7),
-      maxTokens: Number(document.getElementById('setting-max-tokens')?.value || 4096),
+      maxTokens: document.getElementById('setting-auto-tokens')?.checked
+        ? this.recommendedMaxTokens(document.getElementById('setting-model')?.value)
+        : Number(document.getElementById('setting-max-tokens')?.value || 4096),
       workspace: document.getElementById('setting-workspace')?.value,
       systemPrompt: document.getElementById('setting-system-prompt')?.value || '',
     };
@@ -95,6 +108,13 @@ window.Settings = {
     } finally {
       if (button) { setTimeout(() => { button.disabled = false; button.textContent = 'Save Settings'; }, 1200); }
     }
+  },
+
+  recommendedMaxTokens(model = '') {
+    const name = String(model).toLowerCase();
+    if (name.includes('gpt-4o') || name.includes('claude') || name.includes('deepseek-r1')) return 8192;
+    if (name.includes('llama') || name.includes('mistral') || name.includes('qwen')) return 8192;
+    return 4096;
   },
 
   async testConnection() {
