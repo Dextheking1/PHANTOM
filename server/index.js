@@ -67,17 +67,12 @@ wss.on('connection', (ws, request) => {
     console.warn('[WebSocket] Connection error:', err.message);
   });
 
-  const abortController = new AbortController();
-
+  let activeAbortController = null;
   let processing = false;
   ws.on('message', async (data) => {
     try {
       if (Buffer.byteLength(data) > (config.limits?.maxWebSocketMessageBytes || 262144)) {
         ws.close(1009, 'Message too large');
-        return;
-      }
-      if (processing) {
-        ws.send(JSON.stringify({ type: 'error', message: 'A request is already running on this connection.' }));
         return;
       }
       const payload = JSON.parse(data);
@@ -86,6 +81,17 @@ wss.on('connection', (ws, request) => {
         if (ws.readyState === 1) {
           ws.send(JSON.stringify({ type: 'pong' }));
         }
+        return;
+      }
+      if (payload?.type === 'stop') {
+        if (activeAbortController) {
+          activeAbortController.abort();
+          activeAbortController = null;
+        }
+        return;
+      }
+      if (processing) {
+        ws.send(JSON.stringify({ type: 'error', message: 'A request is already running on this connection.' }));
         return;
       }
       if (payload?.type === 'pong') {
@@ -112,6 +118,7 @@ wss.on('connection', (ws, request) => {
       }
 
       processing = true;
+      activeAbortController = new AbortController();
       await processMessage(
         conversationId,
         messageText,
@@ -146,7 +153,7 @@ wss.on('connection', (ws, request) => {
             ws.send(JSON.stringify({ type: 'thinking', content: thinkingText, conversationId }));
           }
         },
-        abortController.signal,
+        activeAbortController.signal,
         // onToolProgress
         (progress) => {
           if (ws.readyState === 1) {
@@ -165,11 +172,12 @@ wss.on('connection', (ws, request) => {
       }
     } finally {
       processing = false;
+      activeAbortController = null;
     }
   });
 
   ws.on('close', () => {
-    abortController.abort();
+    activeAbortController?.abort();
   });
 });
 

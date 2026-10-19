@@ -22,13 +22,26 @@ export async function jinaReadUrl({ url, max_length = 50000 }) {
     validateUrlForSSRF(url);
 
     const jinaUrl = `https://r.jina.ai/${url}`;
-    const response = await fetch(jinaUrl, {
-      headers: {
-        'Accept': 'text/markdown',
-        'User-Agent': 'PHANTOM/1.0',
-      },
-      signal: AbortSignal.timeout(30000),
-    });
+    let response;
+    let lastError;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        response = await fetch(jinaUrl, {
+          headers: {
+            'Accept': 'text/markdown',
+            'User-Agent': 'PHANTOM/1.0',
+          },
+          signal: AbortSignal.timeout(20000),
+        });
+        break;
+      } catch (error) {
+        lastError = error;
+        if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+    if (!response) {
+      return `Jina Reader timed out while reading ${url}. Try scrape_webpage or retry in a moment. (${lastError?.code || lastError?.message || 'network error'})`;
+    }
 
     if (!response.ok) {
       return `Error: Jina Reader returned HTTP ${response.status} for ${url}. Try the scrape_webpage tool as a fallback.`;

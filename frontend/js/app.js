@@ -66,7 +66,6 @@
   if (window.WorkspaceExplorer) window.WorkspaceExplorer.init();
   connectWebSocket();
   loadConversations();
-  checkSudoStatus();
   initImageDrop();
 
   document.querySelectorAll('.quick-start[data-prompt]').forEach((button) => {
@@ -201,6 +200,11 @@
     ws.onclose = () => {
       stopHeartbeat();
       setStatus(false);
+      if (isProcessing) {
+        isProcessing = false;
+        Chat.addErrorMessage('Connection lost while PHANTOM was generating. Reconnect and retry the last request.');
+        updateButtons();
+      }
       attemptReconnect();
     };
 
@@ -281,6 +285,9 @@
         break;
 
       case 'tool_result':
+        if (String(msg.result || '').includes('[SUDO_REQUIRED]')) {
+          showSudoModal();
+        }
         if (['show_preview_window', 'show_code_demo', 'analyze_target_graph'].includes(msg.name)) {
           try {
             const resObj = typeof msg.result === 'string' ? JSON.parse(msg.result) : msg.result;
@@ -594,22 +601,7 @@
     messageInput.focus();
   }
 
-  // ─── Sudo Modal ───
-  async function checkSudoStatus() {
-    try {
-      const res = await fetch('/api/system/info');
-      const info = await res.json();
-      if (info.isWindows) {
-        return;
-      }
-      if (!info.sudoConfigured) {
-        showSudoModal();
-      }
-    } catch (err) {
-      console.error('Failed to check sudo status:', err);
-    }
-  }
-
+  // ─── Sudo Modal (opened only by an explicit privileged workflow) ───
   function showSudoModal() {
     const modal = document.getElementById('sudo-modal');
     modal.style.display = 'flex';

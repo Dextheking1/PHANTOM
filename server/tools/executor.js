@@ -321,7 +321,7 @@ async function executeCommand({ command, timeout = 120, working_directory, use_s
         const escaped = sudoPass.replace(/'/g, "'\\''");
         cmd = `echo '${escaped}' | sudo -S -p '' ${cleanCmd} 2>&1`;
       } else {
-        cmd = command.trim().startsWith('sudo ') ? command : `sudo ${command}`;
+        return '[SUDO_REQUIRED] This operation needs elevated privileges. Enter your sudo password in the security access prompt, then retry the operation.';
       }
     }
 
