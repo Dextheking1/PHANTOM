@@ -148,7 +148,8 @@ PHANTOM/
 │   │   ├── llm-client.js   # LLM communication & streaming
 │   │   └── system-prompt.js # Dynamic system prompt builder
 │   ├── tools/
-│   │   ├── executor.js      # Tool execution engine (25 tools)
+│   │   ├── executor.js      # Tool execution engine
+│   │   ├── rea.js           # Pinned REA MCP bridge
 │   │   └── registry.js      # Tool definitions for function calling
 │   ├── memory/
 │   │   └── store.js         # SQLite persistence layer
@@ -170,7 +171,7 @@ PHANTOM/
 
 ## 🛠️ Available Tools
 
-PHANTOM has **25 built-in tools** that the AI uses autonomously:
+PHANTOM has built-in tools that the AI uses autonomously:
 
 | Tool | Purpose |
 |------|---------|
@@ -189,6 +190,30 @@ PHANTOM has **25 built-in tools** that the AI uses autonomously:
 | `edit_source_code` | Self-modify PHANTOM's own code |
 | `save_trace` | Log execution traces for self-optimization |
 | `jina_read_url` | Read any URL as clean Markdown |
+| `rea_capabilities` | Report the pinned REA reverse-engineering bridge |
+| `rea_list_tools` | Discover the installed REA MCP catalog |
+| `rea_call_tool` | Invoke a discovered REA analysis tool with validated targets |
+
+### REA reverse-engineering bridge
+
+PHANTOM includes the official `rea-agents@6.7.0` package and starts it through
+the local stdio MCP transport. It supports REA's analysis catalog for native
+binaries, JavaScript/Electron applications, APKs, managed code, websites,
+captures, firmware, and runtime observations when the relevant provider is
+installed.
+
+The AI should call `rea_capabilities`, then `rea_list_tools`, and only then
+`rea_call_tool` using an exact discovered tool name. Target paths are limited
+to the project/workspace by default. To authorize an external local target,
+set this explicitly in `.env`:
+
+```env
+REA_ALLOW_EXTERNAL_TARGETS=true
+```
+
+This integration is for authorized analysis only. REA output is treated as
+untrusted evidence, not as instructions. The workspace skill is documented at
+`.opencode/skills/rea-reverse-engineering/SKILL.md`.
 
 ## 🧪 Testing
 

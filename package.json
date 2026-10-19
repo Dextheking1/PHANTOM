@@ -30,17 +30,18 @@
     "mime-types": "^3.0.2",
     "multer": "^2.1.1",
     "openai": "^4.78.0",
+    "rea-agents": "6.7.0",
     "remove-markdown": "^0.6.4",
     "sharp": "^0.35.3",
     "uuid": "^11.1.0",
     "ws": "^8.18.0"
   },
   "optionalDependencies": {
-    "@img/sharp-linux-x64": "^0.33.5",
+    "@img/sharp-darwin-arm64": "^0.33.5",
+    "@img/sharp-darwin-x64": "^0.33.5",
     "@img/sharp-libvips-linux-x64": "^1.0.4",
     "@img/sharp-linux-arm64": "^0.33.5",
-    "@img/sharp-darwin-x64": "^0.33.5",
-    "@img/sharp-darwin-arm64": "^0.33.5"
+    "@img/sharp-linux-x64": "^0.33.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

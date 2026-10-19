@@ -5,6 +5,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { mkdtemp, rm } from 'fs/promises';
 import config from '../server/config.js';
+import { reaCapabilities, validateReaTarget } from '../server/tools/rea.js';
 
 
 vi.mock('@xenova/transformers', () => {
@@ -52,6 +53,20 @@ describe('Tools Executor', () => {
 
     const result = await executeTool('list_directory', { path: tempDir });
     expect(result).toContain('test1.txt');
+  });
+});
+
+describe('REA bridge', () => {
+  it('reports the pinned package and safe default target policy', () => {
+    const capabilities = reaCapabilities();
+    expect(capabilities.package).toBe('rea-agents');
+    expect(capabilities.version).toBe('6.7.0');
+    expect(capabilities.externalTargetsAllowed).toBe(false);
+  });
+
+  it('rejects missing targets before starting the REA process', () => {
+    expect(() => validateReaTarget(join(config.root, 'phantom-target-that-does-not-exist')))
+      .toThrow('REA target does not exist');
   });
 });
 

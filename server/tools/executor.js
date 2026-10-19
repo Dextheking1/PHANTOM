@@ -8,6 +8,7 @@ import { getSetting } from '../memory/store.js';
 import config from '../config.js';
 import { getSystemCapabilities } from './self_awareness.js';
 import { jinaReadUrl } from './internet.js';
+import { reaCallTool, reaCapabilities, reaListTools } from './rea.js';
 
 /**
  * Checks if the current process is running with Windows Administrator (Elevated) privileges.
@@ -112,6 +113,9 @@ export async function executeTool(name, args, onProgress) {
     case 'get_system_capabilities': return await getSystemCapabilitiesTool();
     // Web research tools
     case 'jina_read_url': return await jinaReadUrl(args);
+    case 'rea_capabilities': return reaCapabilities();
+    case 'rea_list_tools': return await reaListTools(args);
+    case 'rea_call_tool': return await reaCallTool(args);
     default:
       return `Unknown tool: ${name}`;
   }

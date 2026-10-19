@@ -577,5 +577,43 @@ export function getToolDefinitions() {
         },
       },
     },
+    {
+      type: 'function',
+      function: {
+        name: 'rea_capabilities',
+        description: 'Report the installed REA reverse-engineering bridge and its safe target policy.',
+        parameters: { type: 'object', properties: {} },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'rea_list_tools',
+        description: 'Discover the locally installed REA MCP reverse-engineering tools before calling one.',
+        parameters: {
+          type: 'object',
+          properties: {
+            timeout: { type: 'integer', description: 'MCP startup/request timeout in milliseconds.', default: 330000 },
+          },
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'rea_call_tool',
+        description: 'Call one discovered REA MCP tool for authorized reverse engineering. Discover tools with rea_list_tools first; target paths are restricted to PHANTOM/project workspace unless explicitly enabled by the operator.',
+        parameters: {
+          type: 'object',
+          properties: {
+            tool_name: { type: 'string', description: 'Exact REA MCP tool name returned by rea_list_tools.' },
+            arguments: { type: 'object', description: 'Arguments accepted by the discovered REA tool.' },
+            target: { type: 'string', description: 'Optional local artifact path. It is validated by PHANTOM before being passed to REA.' },
+            timeout: { type: 'integer', description: 'MCP startup/request timeout in milliseconds.', default: 330000 },
+          },
+          required: ['tool_name'],
+        },
+      },
+    },
   ];
 }
