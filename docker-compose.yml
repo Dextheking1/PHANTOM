@@ -7,11 +7,16 @@ services:
       - "127.0.0.1:3000:3000"
     volumes:
       - ./workspace:/app/workspace
+      - phantom-data:/app/data
     environment:
       - NODE_ENV=production
       - HOST=0.0.0.0
       - PHANTOM_LOCAL_MODE=true
       - PORT=3000
+      - MAX_CONCURRENT_CHATS=${MAX_CONCURRENT_CHATS:-4}
       - API_TOKEN=${API_TOKEN}
       - REA_ENABLE_TOOL_CALLS=${REA_ENABLE_TOOL_CALLS:-false}
       - REA_ALLOW_EXTERNAL_TARGETS=${REA_ALLOW_EXTERNAL_TARGETS:-false}
+
+volumes:
+  phantom-data:

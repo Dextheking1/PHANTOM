@@ -224,8 +224,11 @@ export function addMessage(conversationId, { role, content, tool_calls, tool_cal
   return id;
 }
 
-export function getMessages(conversationId) {
-  const rows = getDB().prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC, rowid ASC').all(conversationId);
+export function getMessages(conversationId, limit) {
+  if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1)) throw new Error('Message limit must be a positive integer');
+  const rows = limit === undefined
+    ? getDB().prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC, rowid ASC').all(conversationId)
+    : getDB().prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?').all(conversationId, limit).reverse();
   return rows.map(r => ({
     ...r,
     tool_calls: r.tool_calls ? JSON.parse(r.tool_calls) : undefined,

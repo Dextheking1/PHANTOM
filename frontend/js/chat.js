@@ -48,6 +48,7 @@ window.Chat = {
   },
 
   clear() {
+    this.isStreaming = false;
     this.messagesEl.innerHTML = '';
     this.currentAssistantEl = null;
     this.currentContent = '';
@@ -180,11 +181,10 @@ window.Chat = {
     this.isStreaming = true;
     this.scrollToBottom(true);
 
-    // Start the typing animation loop
-    this._startTypingLoop();
+    // The CSS indicator can wait without running an idle animation-frame loop.
   },
 
-  appendChunk(text) {
+  appendChunk(text, immediate = false) {
     if (!this.currentAssistantEl) {
       this.startAssistantMessage();
     }
@@ -195,11 +195,21 @@ window.Chat = {
 
     // Add text to full content buffer
     this.currentContent += text;
+    if (immediate) {
+      if (this.typingTimer) cancelAnimationFrame(this.typingTimer);
+      this.typingTimer = null;
+      this.renderedContent = this.currentContent;
+      this.typingQueue = [];
+      this.typingIndex = 0;
+      this.currentAssistantEl.innerHTML = window.renderMarkdown(this.currentContent);
+      return;
+    }
 
     // Queue only the NEW characters for typing animation
     for (const char of text) {
       this.typingQueue.push(char);
     }
+    this._startTypingLoop();
   },
 
   /**
@@ -207,10 +217,12 @@ window.Chat = {
    * FIXED: scrollToBottom now called after every render to keep up
    */
   _startTypingLoop() {
+    if (this.typingTimer) return;
     let lastTime = 0;
 
     const animate = (timestamp) => {
-      if (!this.isStreaming && this.typingIndex >= this.typingQueue.length) {
+      if (!this.isStreaming || this.typingIndex >= this.typingQueue.length) {
+        this.typingTimer = null;
         return; // Stop the loop
       }
 
@@ -252,7 +264,11 @@ window.Chat = {
         }
       }
 
-      this.typingTimer = requestAnimationFrame(animate);
+      if (this.typingIndex >= this.typingQueue.length) {
+        this.typingQueue = [];
+        this.typingIndex = 0;
+        this.typingTimer = null;
+      } else this.typingTimer = requestAnimationFrame(animate);
     };
 
     this.typingTimer = requestAnimationFrame(animate);
@@ -365,7 +381,7 @@ window.Chat = {
    * Live tool output — stream text into the tool card body in real-time
    */
   updateToolProgress(data) {
-    const card = document.getElementById(`tool-${data.id}`);
+    const card = this.messagesEl.querySelector(`[id="tool-${CSS.escape(String(data.id))}"]`);
     if (card) {
       const body = card.querySelector('.tool-card-body');
       if (body) {
@@ -379,7 +395,7 @@ window.Chat = {
   },
 
   addToolResult(data) {
-    const card = document.getElementById(`tool-${data.id}`);
+    const card = this.messagesEl.querySelector(`[id="tool-${CSS.escape(String(data.id))}"]`);
     if (card) {
       const status = card.querySelector('.tool-status');
       status.className = 'tool-status done';

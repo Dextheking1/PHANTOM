@@ -9,10 +9,10 @@
 </head>
 <body>
   <div id="app">
-    <aside id="sidebar" class="sidebar">
+    <aside id="sidebar" class="sidebar" aria-label="Conversations">
       <div class="sidebar-header">
         <div class="logo"><span class="logo-mark" aria-hidden="true">P</span><span class="logo-text">PHANTOM</span></div>
-        <button type="button" id="new-chat-btn" class="btn-icon" title="New chat" aria-label="New chat">＋</button>
+        <div class="sidebar-header-actions"><button type="button" id="new-chat-btn" class="btn-icon" title="New chat" aria-label="New chat">＋</button><button type="button" id="sidebar-close" class="btn-icon mobile-only" title="Close sidebar" aria-label="Close sidebar">×</button></div>
       </div>
       <div class="sidebar-search"><input type="search" id="search-conversations" aria-label="Search conversations" placeholder="Search conversations…"></div>
       <div id="conversation-list" class="conversation-list"></div>
@@ -21,10 +21,11 @@
         <button type="button" id="settings-btn" class="btn-icon" title="Settings" aria-label="Settings">⚙</button>
       </div>
     </aside>
+    <button type="button" id="sidebar-backdrop" class="sidebar-backdrop" aria-label="Close sidebar" tabindex="-1" hidden></button>
 
     <main id="main-content" class="main-content">
       <header id="top-bar" class="top-bar">
-        <button type="button" id="sidebar-toggle" class="btn-icon" title="Toggle sidebar" aria-label="Toggle sidebar">☰</button>
+        <button type="button" id="sidebar-toggle" class="btn-icon" title="Toggle sidebar" aria-label="Toggle sidebar" aria-controls="sidebar" aria-expanded="true">☰</button>
         <div class="top-bar-actions">
           <button type="button" id="workspace-toggle-btn" class="btn btn-sm btn-secondary" aria-label="Toggle workspace">Workspace</button>
           <button type="button" id="theme-toggle-btn" class="btn btn-sm btn-secondary" aria-label="Toggle theme">Theme</button>
@@ -38,7 +39,7 @@
         <div class="drop-overlay" id="drop-overlay"><div class="drop-overlay-inner"><span aria-hidden="true">＋</span><p>Drop an image to analyse</p></div></div>
         <div id="welcome-screen" class="welcome-screen">
           <div class="welcome-kicker">SECURITY WORKBENCH <span aria-hidden="true">/</span> READY</div>
-          <div class="welcome-mark" aria-hidden="true">P</div>
+          <div class="welcome-mark" aria-hidden="true">👻</div>
           <h1 class="welcome-title">Start with a clear objective.</h1>
           <p class="welcome-subtitle">Investigate, document, and validate authorised security work from one focused workspace.</p>
           <div class="quick-starts" aria-label="Quick start prompts">

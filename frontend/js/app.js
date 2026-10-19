@@ -1,3 +1,6 @@
+import { initSidebar } from './sidebar.js';
+import { ChatSessions } from './chat-sessions.js';
+
 /**
  * PHANTOM — Main Application Controller
  * Handles WebSocket, conversation management, and UI orchestration
@@ -11,7 +14,10 @@
   let ws = null;
   let currentConversationId = null;
   let conversations = [];
-  let isProcessing = false;
+  const chatSessions = new ChatSessions();
+  let activeSession = chatSessions.create();
+  chatSessions.activate(activeSession);
+  let historyGeneration = 0;
   let reconnectAttempts = 0;
 
   // Pending image for OSINT (base64 data URL)
@@ -28,8 +34,7 @@
   const statusDot = document.querySelector('.status-dot');
   const statusText = document.querySelector('.status-text');
   const connectionBadge = document.getElementById('connection-status');
-  const sidebarToggle = document.getElementById('sidebar-toggle');
-  const sidebar = document.getElementById('sidebar');
+  const sidebarNavigation = initSidebar({ document, window });
 
   // ─── Theme Initialization ───
   function initTheme() {
@@ -55,10 +60,6 @@
 
   // ─── Initialize ───
   initTheme();
-
-  if (localStorage.getItem('phantom_sidebar_collapsed') === 'true' && window.innerWidth > 768) {
-    document.getElementById('app').classList.add('sidebar-collapsed');
-  }
 
   Chat.init();
   Settings.init();
@@ -200,11 +201,10 @@
     ws.onclose = () => {
       stopHeartbeat();
       setStatus(false);
-      if (isProcessing) {
-        isProcessing = false;
-        Chat.addErrorMessage('Connection lost while PHANTOM was generating. Reconnect and retry the last request.');
-        updateButtons();
-      }
+      chatSessions.disconnect();
+      renderActiveSession();
+      renderConversationList();
+      updateButtons();
       attemptReconnect();
     };
 
@@ -248,22 +248,38 @@
 
   // ─── Message Handler ───
   function handleMessage(msg) {
-    // Session isolation: only render messages for the active conversation
-    if (msg.conversationId && currentConversationId && msg.conversationId !== currentConversationId) {
-      if (msg.type !== 'conversation_created' && msg.type !== 'title_updated' && msg.type !== 'pong') {
-        return;
-      }
+    if (msg.type === 'session_ready') {
+      chatSessions.multiplexed = msg.protocolVersion >= 2;
+      chatSessions.maxConcurrent = Math.max(1, Math.min(32, Number(msg.maxConcurrentChats) || 4));
+      return;
     }
+    if (msg.type === 'pong') return;
+    if (msg.type === 'title_updated') { loadConversations(); return; }
+    if (msg.type === 'protocol_error') { window.Toast.show(msg.message, 'error'); return; }
+    const session = chatSessions.route(msg);
+    if (!session) return; // Never guess that an unscoped frame belongs to the visible chat.
+    if (msg.type === 'conversation_created') {
+      if (session === activeSession) currentConversationId = session.conversationId;
+      loadConversations();
+      return;
+    }
+    if (session === activeSession) {
+      renderChatEvent({ ...msg });
+      updateButtons();
+    }
+    if (['response_start', 'response_end', 'error'].includes(msg.type)) renderConversationList();
+  }
 
+  function renderChatEvent(msg, replay = false) {
     switch (msg.type) {
-      case 'conversation_created':
-        currentConversationId = msg.conversationId;
-        loadConversations();
+      case 'user_message':
+        Chat.addUserMessage(msg.content, msg.image);
+        break;
+      case 'system_message':
+        Chat.addSystemMessage(msg.content);
         break;
 
       case 'response_start':
-        isProcessing = true;
-        updateButtons();
         Chat.startAssistantMessage();
         break;
 
@@ -272,7 +288,7 @@
         break;
 
       case 'chunk':
-        Chat.appendChunk(msg.content || msg.data || '');
+        Chat.appendChunk(msg.content || msg.data || '', replay);
         break;
 
       case 'tool_call':
@@ -285,23 +301,26 @@
         break;
 
       case 'tool_result':
-        if (String(msg.result || '').includes('[SUDO_REQUIRED]')) {
+        if (!replay && String(msg.result || '').includes('[SUDO_REQUIRED]')) {
           showSudoModal();
         }
         if (['show_preview_window', 'show_code_demo', 'analyze_target_graph'].includes(msg.name)) {
           try {
             const resObj = typeof msg.result === 'string' ? JSON.parse(msg.result) : msg.result;
             if (resObj && resObj.html_content) {
+              if (!replay) {
               window.showPreview(resObj.html_content, resObj.title || 'Preview');
 
               if (resObj.open_new_window) {
+                const previewSession = activeSession;
                 // Wait a tick for the UI to update, then click the popout button automatically
                 setTimeout(() => {
-                  document.getElementById('preview-popout-btn')?.click();
+                  if (activeSession === previewSession) document.getElementById('preview-popout-btn')?.click();
                 }, 100);
               }
 
-              // modify msg.result to only show success message in chat
+              }
+              // Keep transcript replay free of preview-window side effects.
               msg.result = resObj.message || 'Success';
             }
           } catch (e) {
@@ -313,8 +332,6 @@
 
       case 'response_end':
         Chat.endAssistantMessage();
-        isProcessing = false;
-        updateButtons();
         break;
 
       case 'title_updated':
@@ -323,8 +340,7 @@
 
       case 'error':
         Chat.addErrorMessage(msg.message);
-        isProcessing = false;
-        updateButtons();
+        if (msg.terminal) Chat.endAssistantMessage();
         break;
 
       case 'pong':
@@ -335,71 +351,57 @@
   // ─── Send Message ───
   function sendMessage() {
     const content = messageInput.value.trim();
-    if ((!content && !pendingImage) || isProcessing) return;
-
-    let finalContent = content;
-
-    if (pendingImage) {
-      // Build prompt with base64 image encoded as data URL
-
-
-      Chat.addUserMessage(finalContent || '🖼️ Image provided', pendingImage);
-
-      // Send with image context embedded in message
-      const imageMsg = `${content ? content : 'Please analyze this image.'}\n\n[IMAGE ATTACHED: ${pendingImageName || 'image.png'}]\nImage data: ${pendingImage}`;
-
-      messageInput.value = '';
-      messageInput.style.height = 'auto';
-      clearPendingImage();
-      updateButtons();
-
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          type: 'chat',
-          content: imageMsg,
-          conversationId: currentConversationId,
-        }));
-      } else {
-        Chat.addErrorMessage('Not connected to server. Trying to reconnect...');
-        connectWebSocket();
-      }
+    if ((!content && !pendingImage) || activeSession.processing || activeSession.loading) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      window.Toast.show('Not connected to server. Your draft has been kept.', 'warning');
+      connectWebSocket();
       return;
     }
-
-    Chat.addUserMessage(finalContent);
+    let requestId;
+    try { requestId = chatSessions.begin(activeSession); }
+    catch (error) { window.Toast.show(error.message, 'warning'); return; }
+    const finalContent = pendingImage
+      ? `${content || 'Please analyze this image.'}\n\n[IMAGE ATTACHED: ${pendingImageName || 'image.png'}]\nImage data: ${pendingImage}`
+      : content;
+    const frame = { type: 'user_message', content: content || '🖼️ Image provided', image: pendingImage };
+    chatSessions.record(activeSession, frame);
+    renderChatEvent(frame);
+    try {
+      ws.send(JSON.stringify({ type: 'chat', content: finalContent, conversationId: currentConversationId, requestId }));
+    } catch {
+      handleMessage({ type: 'error', message: 'Could not send this message. Reconnect and retry.', requestId, conversationId: currentConversationId, terminal: true });
+      return;
+    }
     messageInput.value = '';
     messageInput.style.height = 'auto';
+    activeSession.draft = '';
+    activeSession.image = null;
+    activeSession.imageName = '';
+    clearPendingImage();
     updateButtons();
-
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: 'chat',
-        content: finalContent,
-        conversationId: currentConversationId,
-      }));
-    } else {
-      Chat.addErrorMessage('Not connected to server. Trying to reconnect...');
-      connectWebSocket();
-    }
+    renderConversationList();
   }
 
   // ─── Stop AI ───
   function stopAI() {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'stop' }));
-      Chat.addSystemMessage('⏹ Stop requested...');
+    if (activeSession.processing && ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'stop', conversationId: activeSession.conversationId, requestId: activeSession.requestId }));
+      const frame = { type: 'system_message', content: '⏹ Stop requested for this chat…' };
+      chatSessions.record(activeSession, frame);
+      renderChatEvent(frame);
     }
   }
 
   // ─── Button State Management ───
   function updateButtons() {
-    if (isProcessing) {
+    messageInput.disabled = activeSession.loading;
+    if (activeSession.processing) {
       sendBtn.style.display = 'none';
       stopBtn.style.display = 'flex';
     } else {
       sendBtn.style.display = 'flex';
       stopBtn.style.display = 'none';
-      sendBtn.disabled = !messageInput.value.trim() && !pendingImage;
+      sendBtn.disabled = activeSession.loading || (!messageInput.value.trim() && !pendingImage);
     }
   }
 
@@ -490,8 +492,15 @@
 
   function loadImageFile(file) {
     if (!file || !file.type.startsWith('image/')) return;
+    const session = activeSession;
+    const generation = (session.imageGeneration || 0) + 1;
+    session.imageGeneration = generation;
     const reader = new FileReader();
     reader.onload = (e) => {
+      if (session.imageGeneration !== generation) return;
+      session.image = e.target.result;
+      session.imageName = file.name;
+      if (activeSession !== session) return;
       pendingImage = e.target.result;
       pendingImageName = file.name;
       showImagePreview(e.target.result, file.name);
@@ -511,6 +520,9 @@
   }
 
   function clearPendingImage() {
+    activeSession.imageGeneration = (activeSession.imageGeneration || 0) + 1;
+    activeSession.image = null;
+    activeSession.imageName = '';
     pendingImage = null;
     pendingImageName = '';
     const bar = document.getElementById('image-preview-bar');
@@ -532,59 +544,79 @@
     }
   }
 
-  function renderConversationList(filter = '') {
+  function renderConversationList(filter = searchInput.value) {
     convList.innerHTML = '';
     const filtered = filter
       ? conversations.filter(c => c.title.toLowerCase().includes(filter.toLowerCase()))
       : conversations;
 
     for (const conv of filtered) {
+      const session = chatSessions.find(conv.id);
       const el = document.createElement('div');
       el.className = `conv-item${conv.id === currentConversationId ? ' active' : ''}`;
       el.innerHTML = `
-        <span class="conv-icon">💬</span>
-        <span class="conv-title">${escapeHtml(conv.title)}</span>
+        <button type="button" class="conv-select"${conv.id === currentConversationId ? ' aria-current="true"' : ''}>
+          <span class="conv-icon" aria-hidden="true">💬</span>
+          <span class="conv-title">${escapeHtml(conv.title)}</span>
+          ${session?.processing ? '<span class="conv-activity running" aria-label="Generating reply" title="Generating reply">●</span>' : session?.unread ? '<span class="conv-activity" aria-label="Unread reply" title="Unread reply">●</span>' : ''}
+        </button>
         <button type="button" class="conv-delete" title="Delete" aria-label="Delete conversation">✕</button>
       `;
 
-      el.addEventListener('click', (e) => {
-        if (e.target.classList.contains('conv-delete')) {
-          deleteConversation(conv.id);
-          return;
-        }
-        selectConversation(conv.id);
-      });
+      el.querySelector('.conv-delete').addEventListener('click', () => deleteConversation(conv.id));
+      el.querySelector('.conv-select').addEventListener('click', () => selectConversation(conv.id));
 
       convList.appendChild(el);
     }
   }
 
   async function selectConversation(id) {
-    currentConversationId = id;
+    const restoreListFocus = convList.contains(document.activeElement);
+    const session = chatSessions.find(id) || chatSessions.create(id);
+    activateSession(session);
     renderConversationList();
+    if (restoreListFocus) convList.querySelector('[aria-current="true"]')?.focus();
+    sidebarNavigation.closeMobile();
 
+    if (session.processing) return;
+    const generation = ++historyGeneration;
+    const revision = session.revision;
+    session.historyGeneration = generation;
+    session.loading = true;
+    updateButtons();
     try {
       const res = await fetch(`/api/conversations/${id}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      Chat.renderHistory(data.messages);
+      if (session.historyGeneration !== generation || session.revision !== revision || session.processing) return;
+      session.history = data.messages || [];
+      session.events = [];
+      if (activeSession === session) renderActiveSession();
     } catch (err) {
+      if (activeSession !== session || session.historyGeneration !== generation) return;
       console.error(err);
       window.Toast.show('Failed to load conversation', 'error');
       Chat.addErrorMessage('Failed to load conversation');
+    } finally {
+      if (session.historyGeneration === generation) session.loading = false;
+      if (activeSession === session) updateButtons();
     }
-
-    sidebar.classList.remove('open');
   }
 
   async function deleteConversation(id) {
+    const session = chatSessions.find(id);
+    if (session?.processing) {
+      window.Toast.show('Stop this chat before deleting it.', 'warning');
+      return;
+    }
     window.Toast.confirm('Are you sure you want to delete this conversation?', async () => {
       try {
-        await fetch(`/api/conversations/${id}`, { method: 'DELETE' });
+        const response = await fetch(`/api/conversations/${id}`, { method: 'DELETE' });
+        if (!response.ok) throw new Error('Delete failed');
         if (currentConversationId === id) {
-          currentConversationId = null;
-          Chat.clear();
-          Chat.showWelcome();
+          newChat();
         }
+        if (session) chatSessions.sessions.delete(session.key);
         loadConversations();
       } catch (err) {
         console.error('Failed to delete conversation:', err);
@@ -594,11 +626,44 @@
   }
 
   function newChat() {
-    currentConversationId = null;
-    Chat.clear();
-    Chat.showWelcome();
+    sidebarNavigation.closeMobile();
+    activateSession(chatSessions.create());
     renderConversationList();
     messageInput.focus();
+  }
+
+  function activateSession(session) {
+    activeSession.draft = messageInput.value;
+    activeSession.image = pendingImage;
+    activeSession.imageName = pendingImageName;
+    activeSession = session;
+    currentConversationId = session.conversationId;
+    chatSessions.activate(session);
+    messageInput.value = session.draft;
+    pendingImage = session.image;
+    pendingImageName = session.imageName;
+    if (pendingImage) showImagePreview(pendingImage, pendingImageName);
+    else document.getElementById('image-preview-bar')?.classList.add('hidden');
+    hidePreview();
+    lastPreviewHtml = '';
+    if (previewIframe) previewIframe.srcdoc = '';
+    const sudoModal = document.getElementById('sudo-modal');
+    if (sudoModal) sudoModal.style.display = 'none';
+    const sudoInput = document.getElementById('sudo-modal-password');
+    if (sudoInput) sudoInput.value = '';
+    renderActiveSession();
+    updateButtons();
+    autoResize();
+  }
+
+  function renderActiveSession() {
+    if (!activeSession.history.length && !activeSession.events.length) {
+      Chat.clear();
+      Chat.showWelcome();
+      return;
+    }
+    Chat.renderHistory(activeSession.history);
+    for (const frame of activeSession.events) renderChatEvent({ ...frame }, true);
   }
 
   // ─── Sudo Modal (opened only by an explicit privileged workflow) ───
@@ -706,31 +771,6 @@
 
   searchInput.addEventListener('input', () => {
     renderConversationList(searchInput.value);
-  });
-
-  sidebarToggle?.addEventListener('click', () => {
-    if (window.innerWidth <= 768) {
-      sidebar.classList.toggle('open');
-    } else {
-      const appEl = document.getElementById('app');
-      appEl.classList.toggle('sidebar-collapsed');
-      const isCollapsed = appEl.classList.contains('sidebar-collapsed');
-      localStorage.setItem('phantom_sidebar_collapsed', isCollapsed ? 'true' : 'false');
-    }
-  });
-
-  document.addEventListener('keydown', (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
-      e.preventDefault();
-      if (window.innerWidth <= 768) {
-        sidebar.classList.toggle('open');
-      } else {
-        const appEl = document.getElementById('app');
-        appEl.classList.toggle('sidebar-collapsed');
-        const isCollapsed = appEl.classList.contains('sidebar-collapsed');
-        localStorage.setItem('phantom_sidebar_collapsed', isCollapsed ? 'true' : 'false');
-      }
-    }
   });
 
   function autoResize() {

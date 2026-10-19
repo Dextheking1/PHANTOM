@@ -51,6 +51,32 @@ Tool loops have a configurable iteration limit. Stop requests cancel active
 generation, but do **not** guarantee immediate termination of every external
 tool or child process.
 
+### Independent chat sessions
+
+Use **New chat**, send a message, and select another conversation in the sidebar
+to work on multiple chats. Each chat keeps its own draft, attachment, streamed
+answer, busy state, and Stop action. Running and unread replies have sidebar
+indicators. Switching chats does not redirect output into the newly selected chat.
+
+The backend allows one request per conversation and up to **4 concurrent chats**
+across connections by default (`MAX_CONCURRENT_CHATS`, capped at 32). Extra requests
+are rejected with a clear error rather than silently queued or duplicated.
+Request IDs isolate response, reasoning, tool, error, and completion events.
+Disconnecting cancels that connection's requests; they are not automatically
+resubmitted, avoiding duplicate API charges. Completed messages remain in SQLite.
+Inactive browser transcript caches are bounded; drafts are not saved across reloads.
+
+Model requests use only that conversation's latest 40 history entries. Global
+saved memories are no longer injected automatically; explicit memory-recall tools
+remain available. Provider configuration is shared but snapshotted for each turn;
+workspace files and tool side effects are still shared, not sandboxed per chat.
+NVIDIA request pacing is shared across simultaneous requests to reduce bursts.
+
+Restart/redeploy the backend after updating to enable parallel-chat support. The
+updated frontend limits older backends to one running chat while still allowing
+safe switching. For existing Docker installations, follow the database migration
+instructions below before recreating a container.
+
 ## Get started
 
 ### Option 1: Docker on Linux
@@ -75,11 +101,31 @@ docker compose logs -f phantom
 docker compose down
 ```
 
-**Storage:** Compose mounts `./workspace` for generated files. The default
-SQLite database lives at `/app/data` inside the container and is not currently
-mounted; it can be lost when the container is replaced. Add a persistent volume
-for that directory and back it up if you need durable settings and conversations.
-Do not publish database files: they can contain keys, passwords, and private chats.
+**Storage:** Compose mounts `./workspace` for generated files and the named
+`phantom-data` volume at `/app/data` for settings, credentials, and conversations.
+The database survives container restarts, rebuilds, and `docker compose down`
+followed by `up`, provided you use the same Compose project and volume.
+**Do not run `docker compose down -v` unless you intend to delete saved data.**
+Database contents are not encrypted at rest: protect the volume and its backups,
+and never publish database files or include them in Git.
+
+If upgrading an existing container that has no `/app/data` volume, migrate its
+database **before** replacing it. These Linux commands stop the server for a
+consistent copy and keep the temporary backup outside the repository:
+
+```bash
+backup_dir="$(mktemp -d)"
+docker compose stop phantom
+docker compose cp phantom:/app/data/. "$backup_dir/"
+docker compose create --build phantom
+docker compose cp "$backup_dir/." phantom:/app/data/
+docker compose start phantom
+```
+
+If either copy fails, stop and resolve it before continuing. The backup directory
+contains private credentials; keep it protected until you verify the restored
+settings, then dispose of it according to your data-retention policy. Do not
+recreate an old container before obtaining a successful backup.
 
 ### Option 2: Local development
 
@@ -99,7 +145,22 @@ npm run dev
 ```
 
 Open **http://localhost:5173**. The development proxy expects the backend on
-port **1337**; keep that default unless you also update `vite.config.js`.
+port **1337** by default. For another backend port, set `PHANTOM_API_ORIGIN`
+when starting Vite; HTTP API requests and WebSocket upgrades use that origin.
+
+To preview the latest frontend on port **4173** against an already-running
+Docker backend on port **3000**:
+
+```bash
+PHANTOM_API_ORIGIN=http://127.0.0.1:3000 npm run preview
+```
+
+This command starts a Vite development preview with API/WebSocket proxying; it
+does not start a second backend or replace saved settings. A plain static file
+server is **not** sufficient: `/api/settings` and `/api/conversations` must reach
+PHANTOM's backend, not return HTML. If the backend is unavailable, start it first.
+For read-only dependency mounts, `PHANTOM_VITE_CACHE_DIR` can point Vite's cache
+at a writable temporary directory.
 
 For the regular server without the Vite dev server:
 
@@ -151,6 +212,21 @@ Pull and serve the selected model in Ollama first. Inside Docker, `localhost`
 means the container, not the host machine; use an address reachable from the
 container. Saved settings can override environment defaults. See
 [`.env.example`](.env.example) and [`server/config.js`](server/config.js).
+
+### Remember settings across sessions
+
+In Settings, enter your provider details and choose **Save Settings**. The API
+key, endpoint, model, temperature (including `0`), token limit, auto-token-sizing
+choice, workspace, and custom instructions are saved server-side in SQLite.
+They reload after browser refreshes, new sessions, and server restarts. The key
+is masked in the browser; saving other fields does not replace the stored key.
+Unsaved form changes are not retained.
+
+Local installations use `data/phantom.db` by default (or `DB_PATH` when set).
+Keep that database when restarting or moving the application. Docker installs
+use the named volume described above; existing installations need the migration
+step before adopting it. Changing the database path, switching Compose project
+names, or removing the volume selects a different or empty database.
 
 ## Reverse engineering with REA
 

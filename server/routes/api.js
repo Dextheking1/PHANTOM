@@ -58,6 +58,7 @@ router.get('/settings', (req, res) => {
       model: settings.api_model || config.api.model,
       temperature: parseFloat(settings.api_temperature || config.api.temperature),
       maxTokens: parseInt(settings.api_max_tokens || config.api.maxTokens),
+      autoMaxTokens: settings.api_auto_max_tokens === 'true',
       workspace: settings.workspace || config.workspace,
       sudoConfigured: isWindows ? true : !!settings.sudo_password,
       isWindows,
@@ -71,13 +72,17 @@ router.get('/settings', (req, res) => {
 
 router.put('/settings', (req, res) => {
   try {
-    const { baseUrl, apiKey, model, temperature, maxTokens, sudoPassword, workspace, systemPrompt } = req.body;
+    const { baseUrl, apiKey, model, temperature, maxTokens, autoMaxTokens, sudoPassword, workspace, systemPrompt } = req.body;
+    if (autoMaxTokens !== undefined && typeof autoMaxTokens !== 'boolean') {
+      return res.status(400).json({ error: 'autoMaxTokens must be a boolean' });
+    }
 
     if (baseUrl) { setSetting('api_base_url', baseUrl); updateConfig({ baseUrl }); }
-    if (apiKey && apiKey !== '••••••••') { setSetting('api_key', apiKey); updateConfig({ apiKey }); }
+    if (apiKey && !apiKey.startsWith('••')) { setSetting('api_key', apiKey); updateConfig({ apiKey }); }
     if (model) { setSetting('api_model', model); updateConfig({ model }); }
     if (temperature !== undefined) { setSetting('api_temperature', String(temperature)); updateConfig({ temperature }); }
     if (maxTokens !== undefined) { setSetting('api_max_tokens', String(maxTokens)); updateConfig({ maxTokens }); }
+    if (autoMaxTokens !== undefined) setSetting('api_auto_max_tokens', autoMaxTokens);
     if (sudoPassword !== undefined) { setSetting('sudo_password', sudoPassword); }
     if (workspace) { setSetting('workspace', workspace); updateConfig({ workspace }); }
     if (systemPrompt !== undefined) { setSetting('system_prompt', systemPrompt); updateConfig({ systemPrompt }); }

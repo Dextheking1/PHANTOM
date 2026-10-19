@@ -4,8 +4,18 @@ import { buildSystemPrompt } from './system-prompt.js';
 import { addMessage, getMessages, searchMemories, saveToolResult } from '../memory/store.js';
 import config from '../config.js';
 import OpenAI from 'openai';
+import { setTimeout as delay } from 'node:timers/promises';
 
 let openaiClient = null;
+const providerSlots = new WeakMap();
+
+async function paceProvider(client, api, signal) {
+  if (!(api.baseUrl || '').includes('nvidia') && !(api.apiKey || '').startsWith('nvapi-')) return;
+  const now = Date.now();
+  const slot = Math.max(now, providerSlots.get(client) || 0);
+  providerSlots.set(client, slot + 1500);
+  if (slot > now) await delay(slot - now, undefined, { signal });
+}
 function sanitizeToolCalls(toolCalls) {
   if (!toolCalls || !Array.isArray(toolCalls)) return toolCalls;
   return toolCalls.map(tc => {
@@ -36,6 +46,7 @@ function getClient() {
     openaiClient = new OpenAI({
       apiKey,
       baseURL,
+      maxRetries: 0, // The bounded, abortable retry loop below owns retries.
       defaultHeaders: {
         'HTTP-Referer': 'https://phantom.ai',
         'X-Title': 'PHANTOM Security Center',
@@ -60,8 +71,12 @@ export { getClient };
  *  - Live tool output streaming via onToolProgress
  */
 export async function processMessage(conversationId, userMessage, sessionContext, onChunk, onToolCall, onToolResult, onError, onThinking, abortSignal, onToolProgress, agentRole = 'default') {
+  // Snapshot this turn's provider settings; another tab saving Settings must not
+  // change the model/temperature halfway through a tool loop.
+  const api = { ...config.api };
+  const client = getClient();
   // Get conversation history
-  const history = getMessages(conversationId);
+  const history = getMessages(conversationId, 40);
 
   // Build messages array
   const messages = [
@@ -69,7 +84,7 @@ export async function processMessage(conversationId, userMessage, sessionContext
   ];
 
   // Determine which model to use based on agent role
-  let targetModel = config.api.model;
+  let targetModel = api.model;
   if (config.agents?.enabled) {
     if (agentRole === 'planner') targetModel = config.agents.plannerModel;
     if (agentRole === 'executor') targetModel = config.agents.executorModel;
@@ -77,7 +92,8 @@ export async function processMessage(conversationId, userMessage, sessionContext
 
   // Add memory context
   try {
-    const relevantMemories = searchMemories(userMessage);
+    // Shared memories are explicit opt-in, not implicit cross-chat context.
+    const relevantMemories = sessionContext?.includeSharedMemory === true ? searchMemories(userMessage) : [];
     if (relevantMemories.length > 0) {
       const memoryContext = relevantMemories.map(m => `[${m.category}] ${m.key}: ${m.value}`).join('\n');
       messages.push({
@@ -140,23 +156,6 @@ export async function processMessage(conversationId, userMessage, sessionContext
 
   // Pre-fetch tool definitions once (don't re-fetch every loop iteration)
   const tools = getToolDefinitions();
-  const client = getClient();
-
-let lastNvidiaCallTime = 0;
-
-async function checkNvidiaRateLimit() {
-  const isNvidia = (config.api.baseUrl || '').includes('nvidia') || (config.api.apiKey || '').startsWith('nvapi-');
-  if (isNvidia) {
-    const minIntervalMs = 1500; // 40 RPM = 60,000ms / 40 = 1,500ms between calls
-    const now = Date.now();
-    const elapsed = now - lastNvidiaCallTime;
-    if (elapsed < minIntervalMs) {
-      const waitTime = minIntervalMs - elapsed;
-      await new Promise(resolve => setTimeout(resolve, waitTime));
-    }
-    lastNvidiaCallTime = Date.now();
-  }
-}
 
   const maxToolIterations = Math.max(1, config.limits?.maxToolIterations || 12);
   let toolIterations = 0;
@@ -172,12 +171,13 @@ async function checkNvidiaRateLimit() {
     try {
       let response;
       let retries = 0;
-      const isNvidia = (config.api.baseUrl || '').includes('nvidia') || (config.api.apiKey || '').startsWith('nvapi-');
+      const isNvidia = (api.baseUrl || '').includes('nvidia') || (api.apiKey || '').startsWith('nvapi-');
       const maxRetries = isNvidia ? 6 : 4;
 
       while (retries < maxRetries) {
         try {
-          await checkNvidiaRateLimit();
+          await paceProvider(client, api, abortSignal);
+          abortSignal?.throwIfAborted();
 
           // If planner, strictly forbid raw tool access (tools undefined)
           // The planner delegates to orchestrator/executors.
@@ -189,18 +189,19 @@ async function checkNvidiaRateLimit() {
             messages,
             tools: effectiveTools,
             tool_choice: effectiveToolChoice,
-            temperature: config.api.temperature,
-            max_tokens: config.api.maxTokens,
+            temperature: api.temperature,
+            max_tokens: api.maxTokens,
             stream: true,
-          });
+          }, { signal: abortSignal });
           break; // Success, exit retry loop
         } catch (apiError) {
-          if (apiError.status === 429 || apiError.message.includes('429') || apiError.message.includes('ResourceExhausted')) {
+          const message = String(apiError.message || '');
+          if (apiError.status === 429 || message.includes('429') || message.includes('ResourceExhausted')) {
             retries++;
             if (retries >= maxRetries) throw apiError;
             const retryDelay = isNvidia ? Math.max(2000, retries * 2000) : Math.pow(2, retries) * 1000;
             console.log(`[PHANTOM] Rate limit hit (429). Retrying in ${retryDelay / 1000}s...`);
-            await new Promise(resolve => setTimeout(resolve, retryDelay));
+            await delay(retryDelay, undefined, { signal: abortSignal });
             if (abortSignal?.aborted) throw new Error('Operation stopped by user.');
             continue;
           }
@@ -383,6 +384,7 @@ async function checkNvidiaRateLimit() {
       if (abortSignal?.aborted) {
         const abortMsg = '[PHANTOM] ⏹ Operation stopped by user.';
         if (typeof onChunk === 'function') onChunk(abortMsg);
+        addMessage(conversationId, { role: 'assistant', content: abortMsg });
         return abortMsg;
       }
       const errMsg = `⚠️ LLM Error: ${error.message}`;

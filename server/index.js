@@ -3,11 +3,17 @@ import { WebSocketServer } from 'ws';
 import app from './app.js';
 import config from './config.js';
 import { processMessage } from './ai/llm-client.js';
-import { createConversation } from './memory/store.js';
+import { createConversation, getConversation } from './memory/store.js';
 import { timingSafeEqual } from 'crypto';
+import { createChatSessionHandler } from './chat-sessions.js';
 
 const server = createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
+const attachChatSession = createChatSessionHandler({
+  processMessage, createConversation, getConversation,
+  maxConcurrentChats: config.limits.maxConcurrentChats,
+  maxMessageBytes: config.limits.maxWebSocketMessageBytes,
+});
 
 function isAuthorized(request) {
   const expected = config.server.apiToken || process.env.API_TOKEN || '';
@@ -67,118 +73,7 @@ wss.on('connection', (ws, request) => {
     console.warn('[WebSocket] Connection error:', err.message);
   });
 
-  let activeAbortController = null;
-  let processing = false;
-  ws.on('message', async (data) => {
-    try {
-      if (Buffer.byteLength(data) > (config.limits?.maxWebSocketMessageBytes || 262144)) {
-        ws.close(1009, 'Message too large');
-        return;
-      }
-      const payload = JSON.parse(data);
-      if (payload?.type === 'ping') {
-        ws.isAlive = true;
-        if (ws.readyState === 1) {
-          ws.send(JSON.stringify({ type: 'pong' }));
-        }
-        return;
-      }
-      if (payload?.type === 'stop') {
-        if (activeAbortController) {
-          activeAbortController.abort();
-          activeAbortController = null;
-        }
-        return;
-      }
-      if (processing) {
-        ws.send(JSON.stringify({ type: 'error', message: 'A request is already running on this connection.' }));
-        return;
-      }
-      if (payload?.type === 'pong') {
-        ws.isAlive = true;
-        return;
-      }
-      
-      // Support both payload.message and payload.content (sent by frontend)
-      const messageText = payload.message || payload.content;
-      if (!payload || !messageText) return;
-
-      let conversationId = payload.conversationId;
-      if (!conversationId) {
-        const conv = createConversation(messageText.substring(0, 30) || 'New Chat');
-        conversationId = conv.id;
-        if (ws.readyState === 1) {
-          ws.send(JSON.stringify({ type: 'conversation_created', conversationId }));
-        }
-      }
-
-      // 1. Notify frontend response start
-      if (ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'response_start', conversationId }));
-      }
-
-      processing = true;
-      activeAbortController = new AbortController();
-      await processMessage(
-        conversationId,
-        messageText,
-        payload.context,
-        // onChunk
-        (chunk) => {
-          if (ws.readyState === 1) {
-            ws.send(JSON.stringify({ type: 'chunk', content: chunk, data: chunk, conversationId }));
-          }
-        },
-        // onToolCall
-        (toolCall) => {
-          if (ws.readyState === 1) {
-            ws.send(JSON.stringify({ type: 'tool_call', ...toolCall, conversationId }));
-          }
-        },
-        // onToolResult
-        (toolResult) => {
-          if (ws.readyState === 1) {
-            ws.send(JSON.stringify({ type: 'tool_result', ...toolResult, conversationId }));
-          }
-        },
-        // onError
-        (errorMsg) => {
-          if (ws.readyState === 1) {
-            ws.send(JSON.stringify({ type: 'error', message: errorMsg, conversationId }));
-          }
-        },
-        // onThinking
-        (thinkingText) => {
-          if (ws.readyState === 1) {
-            ws.send(JSON.stringify({ type: 'thinking', content: thinkingText, conversationId }));
-          }
-        },
-        activeAbortController.signal,
-        // onToolProgress
-        (progress) => {
-          if (ws.readyState === 1) {
-            ws.send(JSON.stringify({ type: 'tool_progress', ...progress, conversationId }));
-          }
-        }
-      );
-
-      // 2. Notify frontend response complete
-      if (ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'response_end', conversationId }));
-      }
-    } catch (err) {
-      if (ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'error', message: err.message }));
-      }
-    } finally {
-      processing = false;
-      activeAbortController = null;
-    }
-  });
-
-  ws.on('close', () => {
-    activeAbortController?.abort();
-  });
+  attachChatSession(ws);
 });
 
 import { printBanner } from './banner.js';

@@ -30,6 +30,7 @@ const config = {
     apiToken: process.env.API_TOKEN || ''
   },
   limits: {
+    maxConcurrentChats: parseInt(process.env.MAX_CONCURRENT_CHATS || '4', 10),
     maxToolIterations: parseInt(process.env.MAX_TOOL_ITERATIONS || '12', 10),
     maxWebSocketMessageBytes: parseInt(process.env.MAX_WS_MESSAGE_BYTES || '262144', 10)
   }
@@ -54,6 +55,7 @@ export function updateConfig(updates) {
   if (updates.provider !== undefined) config.api.provider = updates.provider;
   if (updates.temperature !== undefined) config.api.temperature = Number(updates.temperature);
   if (updates.maxTokens !== undefined) config.api.maxTokens = Number(updates.maxTokens);
+  if (updates.systemPrompt !== undefined) config.systemPrompt = updates.systemPrompt;
   if (updates.workspace !== undefined) {
     config.workspace = updates.workspace;
     try {
@@ -80,6 +82,7 @@ export function loadPersistedSettings(getSetting) {
   const temperature = getSetting('api_temperature', null);
   const maxTokens = getSetting('api_max_tokens', null);
   const workspace = getSetting('workspace', null);
+  const systemPrompt = getSetting('system_prompt', null);
 
   if (baseUrl) config.api.baseUrl = baseUrl;
   if (apiKey) config.api.apiKey = apiKey;
@@ -87,6 +90,7 @@ export function loadPersistedSettings(getSetting) {
   if (provider) config.api.provider = provider;
   if (temperature !== null) config.api.temperature = Number(temperature);
   if (maxTokens !== null) config.api.maxTokens = Number(maxTokens);
+  if (systemPrompt !== null) config.systemPrompt = systemPrompt;
   if (workspace) {
     config.workspace = workspace;
     try {

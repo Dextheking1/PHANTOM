@@ -10,6 +10,7 @@
     "dev": "node bin/phantom.js dev",
     "start": "node bin/phantom.js start",
     "build": "vite build frontend",
+    "preview": "vite --host 127.0.0.1 --port 4173 --strictPort --configLoader runner",
     "test": "vitest run --dir tests",
     "test:watch": "vitest --dir tests",
     "lint": "eslint server/ frontend/js/"

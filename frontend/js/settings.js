@@ -56,19 +56,20 @@ window.Settings = {
   async load() {
     try {
       const response = await fetch('/api/settings');
+      if (!response.ok) throw new Error('Could not retrieve saved settings');
       const data = await response.json();
       const values = {
         'setting-base-url': data.baseUrl || '',
         'setting-api-key': data.apiKeySet ? '••••••••' : '',
         'setting-model': data.model || '',
-        'setting-temperature': data.temperature || 0.7,
-        'setting-max-tokens': data.maxTokens || 4096,
+        'setting-temperature': data.temperature ?? 0.7,
+        'setting-max-tokens': data.maxTokens ?? 4096,
         'setting-workspace': data.workspace || '',
         'setting-system-prompt': data.systemPrompt || '',
       };
       Object.entries(values).forEach(([id, value]) => { const el = document.getElementById(id); if (el) el.value = value; });
       const autoTokens = document.getElementById('setting-auto-tokens');
-      if (autoTokens) autoTokens.checked = false;
+      if (autoTokens) autoTokens.checked = data.autoMaxTokens === true;
       const tempValue = document.getElementById('temperature-value');
       if (tempValue) tempValue.textContent = values['setting-temperature'];
       const model = document.getElementById('current-model');
@@ -86,6 +87,7 @@ window.Settings = {
       baseUrl: document.getElementById('setting-base-url')?.value,
       model: document.getElementById('setting-model')?.value,
       temperature: Number(document.getElementById('setting-temperature')?.value || 0.7),
+      autoMaxTokens: document.getElementById('setting-auto-tokens')?.checked === true,
       maxTokens: document.getElementById('setting-auto-tokens')?.checked
         ? this.recommendedMaxTokens(document.getElementById('setting-model')?.value)
         : Number(document.getElementById('setting-max-tokens')?.value || 4096),
@@ -98,13 +100,20 @@ window.Settings = {
     try {
       const response = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) });
       if (!response.ok) throw new Error((await response.json()).error || 'Save failed');
+      // Do not retain newly entered secrets in the form after saving them.
+      const apiKeyInput = document.getElementById('setting-api-key');
+      if (apiKeyInput && apiKey) { apiKeyInput.value = '••••••••'; apiKeyInput.type = 'password'; }
+      const sudoInput = document.getElementById('setting-sudo-password');
+      if (sudoInput) { sudoInput.value = ''; sudoInput.type = 'password'; }
       const model = document.getElementById('current-model');
       if (model) model.textContent = settings.model || 'No Model';
       if (button) button.textContent = 'Saved';
       window.Toast?.show('Settings saved', 'success');
+      return true;
     } catch (error) {
       window.Toast?.show(error.message, 'error');
       if (button) button.textContent = 'Save Settings';
+      return false;
     } finally {
       if (button) { setTimeout(() => { button.disabled = false; button.textContent = 'Save Settings'; }, 1200); }
     }
@@ -120,7 +129,10 @@ window.Settings = {
   async testConnection() {
     const result = document.getElementById('test-result');
     if (result) { result.className = 'test-result'; result.textContent = 'Testing…'; }
-    await this.save();
+    if (!await this.save()) {
+      if (result) { result.className = 'test-result error'; result.textContent = 'Save settings successfully before testing the connection.'; }
+      return;
+    }
     try {
       const response = await fetch('/api/settings/test', { method: 'POST' });
       const data = await response.json();
