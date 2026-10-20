@@ -39,8 +39,16 @@ window.Settings = {
       if (model && (!model.value || model.value === 'gpt-4o')) model.value = 'meta/llama-3.3-70b-instruct';
     });
 
+    this.connectorsPanel = document.getElementById('connectors-panel');
+    document.getElementById('open-connectors-btn')?.addEventListener('click', () => this.openConnectors());
+    document.getElementById('connectors-close')?.addEventListener('click', () => this.closeConnectors());
+    document.getElementById('connectors-overlay')?.addEventListener('click', () => this.closeConnectors());
+    document.getElementById('connectors-back-to-settings')?.addEventListener('click', () => {
+      this.closeConnectors();
+      this.open();
+    });
+
     this.load();
-    this.loadConnectedTools();
 
     document.getElementById('refresh-tools-btn')?.addEventListener('click', () => this.loadConnectedTools());
     document.getElementById('show-add-tool-btn')?.addEventListener('click', () => {
@@ -54,7 +62,13 @@ window.Settings = {
     document.getElementById('save-custom-tool-btn')?.addEventListener('click', () => this.addCustomTool());
 
     document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && this.isOpen) this.close();
+      if (event.key === 'Escape') {
+        if (this.isConnectorsOpen) {
+          this.closeConnectors();
+        } else if (this.isOpen) {
+          this.close();
+        }
+      }
     });
   },
 
@@ -66,9 +80,20 @@ window.Settings = {
   open() {
     this.panel?.classList.remove('hidden');
     this.isOpen = true;
-    this.loadConnectedTools();
   },
   close() { this.panel?.classList.add('hidden'); this.isOpen = false; },
+
+  openConnectors() {
+    this.close(); // slide out settings
+    this.connectorsPanel?.classList.remove('hidden');
+    this.isConnectorsOpen = true;
+    this.loadConnectedTools();
+  },
+
+  closeConnectors() {
+    this.connectorsPanel?.classList.add('hidden');
+    this.isConnectorsOpen = false;
+  },
 
   async loadConnectedTools() {
     const container = document.getElementById('connected-tools-list');
