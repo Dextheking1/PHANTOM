@@ -40,6 +40,7 @@ window.Chat = {
   activityItems: new Map(),
   activitySequence: 0,
   activityTimer: null,
+  _currentTurnTools: [],
   // Auto-scroll control: user can scroll up to pause, near-bottom = resume
   _userScrolled: false,
   _lastScrollTop: 0,
@@ -82,6 +83,7 @@ window.Chat = {
     this.typingQueue = [];
     this.typingIndex = 0;
     this._userScrolled = false;
+    this._currentTurnTools = [];
     if (this.typingTimer) {
       cancelAnimationFrame(this.typingTimer);
       this.typingTimer = null;
@@ -101,6 +103,7 @@ window.Chat = {
   addUserMessage(content, imageDataUrl) {
     this.hideWelcome();
     this._userScrolled = false; // reset on new user message
+    this._currentTurnTools = []; // reset tools tracked for the new turn
     const el = document.createElement('div');
     el.className = 'message user';
 
@@ -321,6 +324,46 @@ window.Chat = {
       // Final full render
       if (this.renderedContent || this.currentContent) {
         this.currentAssistantEl.innerHTML = window.renderMarkdown(this.renderedContent || this.currentContent);
+
+        // Render prominent tools executed summary if tools were run during this response
+        if (this._currentTurnTools && this._currentTurnTools.length > 0) {
+          const summaryBar = document.createElement('div');
+          summaryBar.className = 'turn-tools-summary';
+          const toolCount = this._currentTurnTools.length;
+          const capturedTools = [...this._currentTurnTools];
+
+          const tagsHtml = capturedTools.map(t => {
+            const isErr = t.status === 'failed';
+            const statusIcon = isErr ? '❌' : '✓';
+            const label = this.escapeHtml(t.name) + (t.duration ? ` (${t.duration}ms)` : '');
+            return `<span class="summary-tag" style="${isErr ? 'border-color: var(--danger); color: var(--danger);' : ''}">${statusIcon} ${label}</span>`;
+          }).join('');
+
+          summaryBar.innerHTML = `
+            <span class="summary-title">⚡ Tools Executed (${toolCount}):</span>
+            <div class="summary-tags">${tagsHtml}</div>
+            <button type="button" class="summary-toggle-btn" title="Inspect full tool commands and outputs">👁️ Tool Details</button>
+          `;
+
+          const toggleBtn = summaryBar.querySelector('.summary-toggle-btn');
+          if (toggleBtn) {
+            toggleBtn.onclick = (e) => {
+              e.stopPropagation();
+              capturedTools.forEach(t => {
+                if (t.card) {
+                  const body = t.card.querySelector('.tool-card-body');
+                  if (body) body.classList.toggle('expanded');
+                }
+              });
+              const firstCard = capturedTools[0]?.card;
+              if (firstCard && firstCard.scrollIntoView) {
+                firstCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              }
+            };
+          }
+
+          this.currentAssistantEl.insertBefore(summaryBar, this.currentAssistantEl.firstChild);
+        }
 
         const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         const footerEl = document.createElement('div');
@@ -690,6 +733,16 @@ window.Chat = {
     this.hideWelcome();
     const item = this._createActivityItem(data, options);
     this._startActivityTimer();
+    if (!options.replay) {
+      if (!this._currentTurnTools) this._currentTurnTools = [];
+      this._currentTurnTools.push({
+        id: item.id,
+        name: item.name,
+        args: item.args,
+        card: item.card,
+        status: 'running',
+      });
+    }
     this.scrollToBottom(true);
     return item;
   },
@@ -725,6 +778,15 @@ window.Chat = {
     const failed = this._isFailedToolResult(data.status, data.result);
     const duration = data.duration_ms ?? data.durationMs ?? data.duration;
     this._setActivityStatus(item, failed ? 'failed' : 'completed', duration);
+
+    if (this._currentTurnTools) {
+      const match = this._currentTurnTools.find(t => t.id === item.id || t.name === item.name);
+      if (match) {
+        match.status = failed ? 'failed' : 'completed';
+        match.duration = duration;
+        match.result = result;
+      }
+    }
 
     if (!options.replay && ['write_file', 'edit_source_code', 'execute_command'].includes(item.name)) {
       window.WorkspaceExplorer?.loadTree();
@@ -785,6 +847,15 @@ window.Chat = {
 
         this.messagesEl.appendChild(el);
       } else if (msg.role === 'assistant') {
+        if (Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
+          for (const tc of msg.tool_calls) {
+            const functionPart = tc?.function && typeof tc.function === 'object' ? tc.function : {};
+            const name = functionPart.name || tc?.name;
+            const rawArgs = functionPart.arguments !== undefined ? functionPart.arguments : tc?.args;
+            const args = this._normaliseArgs(rawArgs);
+            this.addToolCall({ id: tc?.id, name, args }, { replay: true, expanded: true });
+          }
+        }
         if (msg.content) {
           // Strip <think> blocks and show only a redacted status in history.
           let displayContent = this._stringifyValue(msg.content);
@@ -836,21 +907,12 @@ window.Chat = {
             this.messagesEl.appendChild(el);
           }
         }
-        if (Array.isArray(msg.tool_calls)) {
-          for (const tc of msg.tool_calls) {
-            const functionPart = tc?.function && typeof tc.function === 'object' ? tc.function : {};
-            const name = functionPart.name || tc?.name;
-            const rawArgs = functionPart.arguments !== undefined ? functionPart.arguments : tc?.args;
-            const args = this._normaliseArgs(rawArgs);
-            this.addToolCall({ id: tc?.id, name, args }, { replay: true, expanded: true });
-          }
-        }
       } else if (msg.role === 'tool') {
         this.addToolResult({
           id: msg.tool_call_id,
           name: msg.name,
           result: msg.content,
-        }, { replay: true });
+        }, { replay: true, expanded: true });
       }
     }
 

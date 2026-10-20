@@ -107,12 +107,23 @@ window.Settings = {
         const isConnected = tool.connected;
         const statusClass = isConnected ? 'online' : (tool.installed ? 'warning' : 'offline');
         const statusText = isConnected ? 'Connected' : (tool.installed ? 'Installed' : 'Not installed');
-        const actionLabel = isConnected ? '✓ Active' : (tool.installed ? 'Connect' : 'Install & Connect');
-        const btnDisabled = isConnected ? 'disabled' : '';
 
         const isPhoneTool = tool.category === 'mobile-phone' || tool.id === 'adb' || tool.id === 'scrcpy' || tool.id === 'frida';
         const badgeColor = isPhoneTool ? '#10b981' : 'var(--accent)';
         const categoryLabel = isPhoneTool ? '📱 Phone / Mobile' : (tool.category ? `⚙️ ${tool.category}` : 'Security Tool');
+
+        const actionButtons = isConnected
+          ? `
+            <span style="font-size: 11px; padding: 4px 7px; border-radius: 4px; background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); font-weight: 600; white-space: nowrap;">✓ Active</span>
+            <button type="button" class="btn btn-secondary btn-sm" style="padding: 4px 8px; font-size: 11px; white-space: nowrap;" title="Reactivate and test tool connection" onclick="Settings.reactivateTool('${tool.id}', '${this.esc(tool.name)}', '${tool.category || ''}')">
+              🔄 Reactivate
+            </button>
+          `
+          : `
+            <button type="button" class="btn btn-primary btn-sm" style="padding: 5px 9px; font-size: 11px; white-space: nowrap;" onclick="Settings.connectTool('${tool.id}', '${this.esc(tool.name)}', '${tool.category || ''}')">
+              ${tool.installed ? 'Connect' : 'Install & Connect'}
+            </button>
+          `;
 
         return `
           <div class="mcp-item" style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; margin-bottom: 8px;">
@@ -125,10 +136,8 @@ window.Settings = {
               </div>
               <p style="font-size: 11px; color: var(--text-muted); margin-top: 3px; line-height: 1.35;">${this.esc(tool.description)}</p>
             </div>
-            <div style="display: flex; align-items: center; gap: 6px;">
-              <button type="button" class="btn btn-secondary btn-sm" ${btnDisabled} style="padding: 5px 9px; font-size: 11px;" onclick="Settings.connectTool('${tool.id}', '${this.esc(tool.name)}', '${tool.category || ''}')">
-                ${actionLabel}
-              </button>
+            <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
+              ${actionButtons}
               ${tool.isCustom ? `<button type="button" class="btn-icon-sm" style="color: var(--danger); font-size: 12px;" title="Delete connector" onclick="Settings.deleteCustomTool('${tool.id}')">✕</button>` : ''}
             </div>
           </div>
@@ -137,6 +146,51 @@ window.Settings = {
     } catch (err) {
       container.innerHTML = `<p class="mcp-empty" style="color: var(--danger);">Failed to load connected tools: ${this.esc(err.message)}</p>`;
     }
+  },
+
+  async reactivateTool(toolId, toolName, category) {
+    // 1. Notify backend to ensure active state is saved
+    try {
+      await fetch('/api/connected-tools/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: toolId, action: 'reactivate' })
+      });
+    } catch {
+      // Non-blocking
+    }
+
+    // 2. Close drawer
+    this.closeConnectors();
+
+    const displayName = toolName || toolId;
+    window.Toast?.show(`Reactivating & verifying ${displayName}…`, 'info');
+
+    // 3. Dispatch reactivation & verification prompt to AI
+    const isPhoneTool = category === 'mobile-phone' || toolId === 'adb' || toolId === 'scrcpy' || toolId === 'frida';
+    const promptText = isPhoneTool
+      ? `Please reactivate and test the connection for mobile security tool **${displayName}** (\`${toolId}\`):
+1. Run diagnostic checks (\`adb devices -l\` or tool status) to verify current connectivity and authorization status.
+2. If no device is detected or device is 'unauthorized', instruct the user to check their phone screen and tap 'Always allow from this computer'.
+3. Confirm connection readiness and report diagnostic results.`
+      : `Please reactivate and verify the operational connection for security tool **${displayName}** (\`${toolId}\`):
+1. Run a quick verification or version check command to confirm the binary/service is responsive.
+2. Confirm readiness for offensive/defensive operations and display the status.`;
+
+    if (window.App && typeof window.App.sendPrompt === 'function') {
+      window.App.sendPrompt(promptText);
+    } else {
+      const messageInput = document.getElementById('message-input');
+      const sendBtn = document.getElementById('send-btn');
+      if (messageInput && sendBtn) {
+        messageInput.value = promptText;
+        messageInput.dispatchEvent(new Event('input', { bubbles: true }));
+        sendBtn.click();
+      }
+    }
+
+    // 4. Poll status so UI stays in sync
+    setTimeout(() => this.loadConnectedTools(), 1000);
   },
 
   async connectTool(toolId, toolName, category) {

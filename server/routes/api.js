@@ -851,14 +851,17 @@ router.post('/connected-tools/connect', async (req, res) => {
     const target = [...SECURITY_CONNECTORS, ...customConnectors].find(t => t.id === id);
     if (!target) return res.status(404).json({ error: `Tool ${id} not found` });
 
-    if (action === 'install' || action === 'connect' || action === 'mark_active') {
+    if (action === 'connect' || action === 'reactivate' || action === 'mark_active') {
       const connectedState = JSON.parse(getSetting('connected_tools_state', '{}') || '{}');
       connectedState[id] = true;
       setSetting('connected_tools_state', JSON.stringify(connectedState));
+      return res.json({ success: true, message: `Tool ${target.name} activated and connected` });
+    }
 
-      if (action === 'mark_active') {
-        return res.json({ success: true, message: `Tool ${target.name} marked as active and connected` });
-      }
+    if (action === 'install') {
+      const connectedState = JSON.parse(getSetting('connected_tools_state', '{}') || '{}');
+      connectedState[id] = true;
+      setSetting('connected_tools_state', JSON.stringify(connectedState));
 
       const isLinux = process.platform === 'linux';
       let cmd = '';

@@ -9,6 +9,10 @@ node_modules/
 phantom.db
 phantom.db-wal
 phantom.db-shm
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/*.sqlite*
 
 # Workspace data (user-specific)
 workspace/
