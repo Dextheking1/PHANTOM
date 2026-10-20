@@ -637,6 +637,7 @@ router.delete('/skills/:name', (req, res) => {
 
 
 // ─── Connected Tools & REA / MCP Security Integrations ───
+// ─── Connected Tools & REA / MCP Security Integrations ───
 const SECURITY_CONNECTORS = [
   {
     id: 'rea',
@@ -646,6 +647,37 @@ const SECURITY_CONNECTORS = [
     binary: 'rea',
     pkg: 'rea-agents',
     installMethod: 'npm',
+    category: 'reverse-engineering'
+  },
+  {
+    id: 'adb',
+    name: 'Android Debug Bridge (ADB) Phone Connector',
+    description: 'Direct USB & WiFi connection bridge to Android phones and tablets for mobile security auditing and screen control.',
+    type: 'binary',
+    binary: 'adb',
+    pkg: 'adb',
+    installMethod: 'apt',
+    category: 'mobile-phone'
+  },
+  {
+    id: 'scrcpy',
+    name: 'Scrcpy Phone Display & Control',
+    description: 'Display and control Android devices connected via USB or TCP/IP on your screen with ultra low latency.',
+    type: 'binary',
+    binary: 'scrcpy',
+    pkg: 'scrcpy',
+    installMethod: 'apt',
+    category: 'mobile-phone'
+  },
+  {
+    id: 'frida',
+    name: 'Frida Dynamic Mobile & Native Instrumentation',
+    description: 'Dynamic code instrumentation toolkit to hook functions and inspect memory on Android, iOS, and desktop apps.',
+    type: 'binary',
+    binary: 'frida',
+    pkg: 'frida-tools',
+    installMethod: 'pip',
+    category: 'mobile-phone'
   },
   {
     id: 'nmap',
@@ -655,6 +687,17 @@ const SECURITY_CONNECTORS = [
     binary: 'nmap',
     pkg: 'nmap',
     installMethod: 'apt',
+    category: 'network'
+  },
+  {
+    id: 'metasploit',
+    name: 'Metasploit Framework',
+    description: 'World leading penetration testing and vulnerability validation platform with thousands of exploits.',
+    type: 'binary',
+    binary: 'msfconsole',
+    pkg: 'metasploit-framework',
+    installMethod: 'apt',
+    category: 'exploitation'
   },
   {
     id: 'ghidra',
@@ -664,6 +707,7 @@ const SECURITY_CONNECTORS = [
     binary: 'ghidra',
     pkg: 'ghidra',
     installMethod: 'apt',
+    category: 'reverse-engineering'
   },
   {
     id: 'radare2',
@@ -673,6 +717,7 @@ const SECURITY_CONNECTORS = [
     binary: 'r2',
     pkg: 'radare2',
     installMethod: 'apt',
+    category: 'reverse-engineering'
   },
   {
     id: 'sqlmap',
@@ -682,6 +727,7 @@ const SECURITY_CONNECTORS = [
     binary: 'sqlmap',
     pkg: 'sqlmap',
     installMethod: 'apt',
+    category: 'web-security'
   },
   {
     id: 'nuclei',
@@ -691,18 +737,61 @@ const SECURITY_CONNECTORS = [
     binary: 'nuclei',
     pkg: 'projectdiscovery/nuclei/v3/cmd/nuclei@latest',
     installMethod: 'go',
+    category: 'web-security'
   },
+  {
+    id: 'gobuster',
+    name: 'Gobuster Directory & DNS Brute-Forcer',
+    description: 'High-speed directory, DNS sub-domain, and virtual host enumeration scanner.',
+    type: 'binary',
+    binary: 'gobuster',
+    pkg: 'gobuster',
+    installMethod: 'apt',
+    category: 'reconnaissance'
+  },
+  {
+    id: 'nikto',
+    name: 'Nikto Web Server Scanner',
+    description: 'Comprehensive web server scanner for dangerous files, outdated server software, and CGIs.',
+    type: 'binary',
+    binary: 'nikto',
+    pkg: 'nikto',
+    installMethod: 'apt',
+    category: 'web-security'
+  },
+  {
+    id: 'tshark',
+    name: 'Wireshark TShark Packet Analyzer',
+    description: 'Command-line terminal network traffic analyzer and deep packet inspection engine.',
+    type: 'binary',
+    binary: 'tshark',
+    pkg: 'tshark',
+    installMethod: 'apt',
+    category: 'network'
+  },
+  {
+    id: 'hydra',
+    name: 'THC-Hydra Network Logon Cracker',
+    description: 'Very fast network authentication cracker supporting numerous protocols (SSH, FTP, HTTP, etc.).',
+    type: 'binary',
+    binary: 'hydra',
+    pkg: 'hydra',
+    installMethod: 'apt',
+    category: 'credential-testing'
+  }
 ];
 
 router.get('/connected-tools', async (req, res) => {
   try {
     const customConnectors = JSON.parse(getSetting('custom_connectors', '[]') || '[]');
+    const allConnectors = [...SECURITY_CONNECTORS, ...customConnectors];
     // Load manually activated / connected tool states from database
     const connectedState = JSON.parse(getSetting('connected_tools_state', '{}') || '{}');
 
     // Check availability in PATH or package
     const pathDirs = (process.env.PATH || '').split(sep === '\\' ? ';' : ':');
     const checked = await Promise.all(allConnectors.map(async (tool) => {
+
       let installed = false;
       let version = null;
 

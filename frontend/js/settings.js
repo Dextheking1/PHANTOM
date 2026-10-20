@@ -110,23 +110,27 @@ window.Settings = {
         const actionLabel = isConnected ? '✓ Active' : (tool.installed ? 'Connect' : 'Install & Connect');
         const btnDisabled = isConnected ? 'disabled' : '';
 
+        const isPhoneTool = tool.category === 'mobile-phone' || tool.id === 'adb' || tool.id === 'scrcpy' || tool.id === 'frida';
+        const badgeColor = isPhoneTool ? '#10b981' : 'var(--accent)';
+        const categoryLabel = isPhoneTool ? '📱 Phone / Mobile' : (tool.category ? `⚙️ ${tool.category}` : 'Security Tool');
+
         return `
           <div class="mcp-item" style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; margin-bottom: 8px;">
             <div style="flex: 1; min-width: 0;">
-              <div style="display: flex; align-items: center; gap: 6px;">
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                 <span class="status-dot ${statusClass}" style="width: 8px; height: 8px; flex-shrink: 0;"></span>
                 <strong style="font-size: 12.5px; color: var(--text-primary);">${this.esc(tool.name)}</strong>
                 ${tool.version ? `<small style="font-size: 10px; color: var(--accent);">v${this.esc(tool.version)}</small>` : ''}
+                <span style="font-size: 9.5px; padding: 2px 6px; border-radius: 4px; background: rgba(255,255,255,0.06); color: ${badgeColor}; border: 1px solid rgba(255,255,255,0.08);">${categoryLabel}</span>
               </div>
               <p style="font-size: 11px; color: var(--text-muted); margin-top: 3px; line-height: 1.35;">${this.esc(tool.description)}</p>
             </div>
             <div style="display: flex; align-items: center; gap: 6px;">
-              <button type="button" class="btn btn-secondary btn-sm" ${btnDisabled} style="padding: 5px 9px; font-size: 11px;" onclick="Settings.connectTool('${tool.id}', '${this.esc(tool.name)}')">
+              <button type="button" class="btn btn-secondary btn-sm" ${btnDisabled} style="padding: 5px 9px; font-size: 11px;" onclick="Settings.connectTool('${tool.id}', '${this.esc(tool.name)}', '${tool.category || ''}')">
                 ${actionLabel}
               </button>
               ${tool.isCustom ? `<button type="button" class="btn-icon-sm" style="color: var(--danger); font-size: 12px;" title="Delete connector" onclick="Settings.deleteCustomTool('${tool.id}')">✕</button>` : ''}
             </div>
-
           </div>
         `;
       }).join('');
@@ -135,7 +139,7 @@ window.Settings = {
     }
   },
 
-  async connectTool(toolId, toolName) {
+  async connectTool(toolId, toolName, category) {
     // 1. Immediately notify the backend to register / connect
     try {
       await fetch('/api/connected-tools/connect', {
@@ -154,7 +158,14 @@ window.Settings = {
     window.Toast?.show(`Requesting AI to install & connect ${displayName}…`, 'info');
 
     // 3. Dispatch structured instructions to AI in the chat session
-    const promptText = `Please install and connect the security tool **${displayName}** (\`${toolId}\`) to the PHANTOM environment now. 
+    const isPhoneTool = category === 'mobile-phone' || toolId === 'adb' || toolId === 'scrcpy' || toolId === 'frida';
+    const promptText = isPhoneTool
+      ? `Please install and connect the mobile/phone security tool **${displayName}** (\`${toolId}\`) to the PHANTOM environment now.
+1. Check if \`${toolId}\` is already executable or install it using \`install_tool\` (or \`execute_command\` with auto-sudo if needed).
+2. Discover any connected Android phone or mobile device (e.g., using \`adb devices\`, wireless ADB pairing, or scrcpy discovery).
+3. If no phone is plugged in yet, guide the user with clear, quick steps on enabling USB Debugging on their phone so they can connect seamlessly.
+4. Verify the tool's operational status and confirm it is connected and ready.`
+      : `Please install and connect the security tool **${displayName}** (\`${toolId}\`) to the PHANTOM environment now. 
 1. Check if \`${toolId}\` is already executable or install it using \`install_tool\` (or \`execute_command\` with auto-sudo if needed).
 2. Verify its version and operational status by running its help or version check command.
 3. Confirm that it is connected and ready for offensive/defensive operations.`;
