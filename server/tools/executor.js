@@ -519,11 +519,14 @@ export async function executeCommand({ command, timeout = 120, working_directory
       if (sudoPass) {
         const cleanCmd = command.trim().startsWith('sudo ') ? command.trim().replace(/^sudo\s+/, '') : command;
         const escaped = sudoPass.replace(/'/g, "'\\''");
-        cmd = `echo '${escaped}' | sudo -S -p '' ${cleanCmd} 2>&1`;
+        // Wrap command in bash -c so compound statements (&&, ||, ;) maintain elevated privileges
+        const escapedCmd = cleanCmd.replace(/'/g, "'\\''");
+        cmd = `echo '${escaped}' | sudo -S -p '' bash -c '${escapedCmd}' 2>&1`;
       } else {
         return resolvePromise('[SUDO_REQUIRED] This operation needs elevated privileges. Enter your sudo password in the security access prompt, then retry the operation.');
       }
     }
+
 
     let cwd = working_directory || config.workspace;
     if (!cwd || !existsSync(cwd)) {
