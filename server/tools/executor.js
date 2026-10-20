@@ -4,8 +4,7 @@ import { readFile, writeFile, mkdir, readdir, stat, rename, unlink, realpath } f
 import { randomUUID } from 'node:crypto';
 import { dirname, resolve, join, sep, delimiter, basename, relative, isAbsolute } from 'path';
 import os from 'os';
-import { saveMemory, hybridSearchMemories, getMemoryStats, searchConversations, createConversation } from '../memory/store.js';
-import { getSetting } from '../memory/store.js';
+import { saveMemory, hybridSearchMemories, getMemoryStats, searchConversations, createConversation, getSetting, setSetting } from '../memory/store.js';
 import config from '../config.js';
 import { getSystemCapabilities } from './self_awareness.js';
 import { jinaReadUrl } from './internet.js';
@@ -792,11 +791,23 @@ async function installTool(args = {}, onProgress) {
     await mkdir(plan.toolsRoot, { recursive: true });
     if (onProgress) onProgress(`Installing ${args.name} with ${plan.method} in ${plan.toolsRoot}`);
     const result = await executeCommand({ command: plan.command, timeout: 300, working_directory: plan.workingDirectory, use_sudo: plan.useSudo }, onProgress);
+
+    // If install completed without failure, register as connected in settings
+    try {
+      const toolKey = String(args.name || '').toLowerCase().trim();
+      const connectedState = JSON.parse(getSetting('connected_tools_state', '{}') || '{}');
+      connectedState[toolKey] = true;
+      setSetting('connected_tools_state', JSON.stringify(connectedState));
+    } catch (saveErr) {
+      console.warn('[Executor] Could not update connected_tools_state:', saveErr.message);
+    }
+
     return `Install method: ${plan.method}\nInstall location: ${plan.method === 'npm' ? plan.packageRoot : plan.toolsRoot}\n${result}`;
   } catch (error) {
     return `Install not started: ${error.message}\nAction: verify the package name/source and install the detected package manager, or choose an explicit supported method.`;
   }
 }
+
 
 /**
  * Make HTTP requests — enhanced with larger response limits and UA rotation

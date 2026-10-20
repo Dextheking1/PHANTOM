@@ -697,7 +697,8 @@ const SECURITY_CONNECTORS = [
 router.get('/connected-tools', async (req, res) => {
   try {
     const customConnectors = JSON.parse(getSetting('custom_connectors', '[]') || '[]');
-    const allConnectors = [...SECURITY_CONNECTORS, ...customConnectors];
+    // Load manually activated / connected tool states from database
+    const connectedState = JSON.parse(getSetting('connected_tools_state', '{}') || '{}');
 
     // Check availability in PATH or package
     const pathDirs = (process.env.PATH || '').split(sep === '\\' ? ';' : ':');
@@ -708,10 +709,11 @@ router.get('/connected-tools', async (req, res) => {
       if (tool.id === 'rea') {
         const caps = reaCapabilities();
         installed = true;
+        const isConnected = caps.toolCallsEnabled || connectedState['rea'] === true;
         return {
           ...tool,
           installed,
-          connected: caps.toolCallsEnabled,
+          connected: isConnected,
           version: caps.version,
           details: caps,
         };
@@ -726,10 +728,13 @@ router.get('/connected-tools', async (req, res) => {
         }
       }
 
+      // If user connected or tool is installed on PATH
+      const isConnected = installed || connectedState[tool.id] === true;
+
       return {
         ...tool,
         installed,
-        connected: installed,
+        connected: isConnected,
         version,
       };
     }));
@@ -738,6 +743,7 @@ router.get('/connected-tools', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+
 });
 
 router.post('/connected-tools/connect', async (req, res) => {
@@ -756,7 +762,15 @@ router.post('/connected-tools/connect', async (req, res) => {
     const target = [...SECURITY_CONNECTORS, ...customConnectors].find(t => t.id === id);
     if (!target) return res.status(404).json({ error: `Tool ${id} not found` });
 
-    if (action === 'install' || action === 'connect') {
+    if (action === 'install' || action === 'connect' || action === 'mark_active') {
+      const connectedState = JSON.parse(getSetting('connected_tools_state', '{}') || '{}');
+      connectedState[id] = true;
+      setSetting('connected_tools_state', JSON.stringify(connectedState));
+
+      if (action === 'mark_active') {
+        return res.json({ success: true, message: `Tool ${target.name} marked as active and connected` });
+      }
+
       const isLinux = process.platform === 'linux';
       let cmd = '';
 

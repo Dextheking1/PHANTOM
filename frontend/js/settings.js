@@ -121,11 +121,12 @@ window.Settings = {
               <p style="font-size: 11px; color: var(--text-muted); margin-top: 3px; line-height: 1.35;">${this.esc(tool.description)}</p>
             </div>
             <div style="display: flex; align-items: center; gap: 6px;">
-              <button type="button" class="btn btn-secondary btn-sm" ${btnDisabled} style="padding: 5px 9px; font-size: 11px;" onclick="Settings.connectTool('${tool.id}')">
+              <button type="button" class="btn btn-secondary btn-sm" ${btnDisabled} style="padding: 5px 9px; font-size: 11px;" onclick="Settings.connectTool('${tool.id}', '${this.esc(tool.name)}')">
                 ${actionLabel}
               </button>
               ${tool.isCustom ? `<button type="button" class="btn-icon-sm" style="color: var(--danger); font-size: 12px;" title="Delete connector" onclick="Settings.deleteCustomTool('${tool.id}')">✕</button>` : ''}
             </div>
+
           </div>
         `;
       }).join('');
@@ -134,22 +135,51 @@ window.Settings = {
     }
   },
 
-  async connectTool(toolId) {
-    window.Toast?.show(`Connecting ${toolId}…`, 'info');
+  async connectTool(toolId, toolName) {
+    // 1. Immediately notify the backend to register / connect
     try {
-      const res = await fetch('/api/connected-tools/connect', {
+      await fetch('/api/connected-tools/connect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: toolId, action: 'connect' })
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'Connection failed');
-      window.Toast?.show(data.message || `Connected ${toolId}`, 'success');
-      this.loadConnectedTools();
-    } catch (err) {
-      window.Toast?.show(err.message, 'error');
+    } catch {
+      // Non-blocking background attempt
     }
+
+    // 2. Close connectors drawer so user is seamlessly in the chat session
+    this.closeConnectors();
+
+    const displayName = toolName || toolId;
+    window.Toast?.show(`Requesting AI to install & connect ${displayName}…`, 'info');
+
+    // 3. Dispatch structured instructions to AI in the chat session
+    const promptText = `Please install and connect the security tool **${displayName}** (\`${toolId}\`) to the PHANTOM environment now. 
+1. Check if \`${toolId}\` is already executable or install it using \`install_tool\` (or \`execute_command\` with auto-sudo if needed).
+2. Verify its version and operational status by running its help or version check command.
+3. Confirm that it is connected and ready for offensive/defensive operations.`;
+
+    if (window.App && typeof window.App.sendPrompt === 'function') {
+      window.App.sendPrompt(promptText);
+    } else {
+      const messageInput = document.getElementById('message-input');
+      const sendBtn = document.getElementById('send-btn');
+      if (messageInput && sendBtn) {
+        messageInput.value = promptText;
+        messageInput.dispatchEvent(new Event('input', { bubbles: true }));
+        sendBtn.click();
+      }
+    }
+
+    // 4. Poll status so the red dot becomes green as soon as the tool is ready
+    let attempts = 0;
+    const pollInterval = setInterval(async () => {
+      attempts++;
+      await this.loadConnectedTools();
+      if (attempts >= 15) clearInterval(pollInterval);
+    }, 4000);
   },
+
 
   async addCustomTool() {
     const name = document.getElementById('new-tool-name')?.value.trim();

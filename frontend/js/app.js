@@ -898,6 +898,22 @@ import { ChatSessions } from './chat-sessions.js';
   setTimeout(checkSystemUpdate, 5000);
   setInterval(checkSystemUpdate, 60 * 60 * 1000);
 
+  // ─── Global App API for components ───
+  window.App = {
+    sendPrompt(text) {
+      if (!messageInput) return;
+      messageInput.value = text;
+      messageInput.dispatchEvent(new Event('input', { bubbles: true }));
+      sendMessage();
+    },
+    newChat() {
+      newChat();
+    },
+    refreshConversations() {
+      loadConversations();
+    }
+  };
+
   // ─── Helpers ───
   function escapeHtml(str) {
     if (!str) return '';
@@ -907,3 +923,4 @@ import { ChatSessions } from './chat-sessions.js';
   }
 
 })();
+
