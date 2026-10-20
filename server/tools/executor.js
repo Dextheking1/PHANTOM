@@ -554,16 +554,20 @@ export async function executeCommand({ command, timeout = 120, working_directory
       env: { ...process.env, TERM: 'xterm-256color' },
     });
 
+    const startTime = Date.now();
+    let lastOutputTime = Date.now();
     let stdout = '';
     let stderr = '';
 
     proc.stdout.on('data', (data) => {
+      lastOutputTime = Date.now();
       const text = data.toString();
       stdout += text;
       if (onProgress) onProgress(text);
     });
 
     proc.stderr.on('data', (data) => {
+      lastOutputTime = Date.now();
       const text = data.toString().replace(/\[sudo\] password for.*?:\s*/g, '');
       if (text.trim()) {
         stderr += text;
@@ -573,9 +577,23 @@ export async function executeCommand({ command, timeout = 120, working_directory
 
     let settled = false;
     let timeoutHandle;
+    const heartbeatInterval = setInterval(() => {
+      if (settled) {
+        clearInterval(heartbeatInterval);
+        return;
+      }
+      const idleSec = Math.round((Date.now() - lastOutputTime) / 1000);
+      if (idleSec >= 8 && onProgress) {
+        const totalElapsed = Math.round((Date.now() - startTime) / 1000);
+        onProgress(`⏳ [PHANTOM] Still working... (process active, ${totalElapsed}s elapsed)\n`);
+        lastOutputTime = Date.now();
+      }
+    }, 6000);
+
     const settle = (value) => {
       if (settled) return;
       settled = true;
+      clearInterval(heartbeatInterval);
       clearTimeout(timeoutHandle);
       resolvePromise(value);
     };
@@ -763,7 +781,7 @@ export function buildInstallPlan({ name, method = 'auto', source, platform = pro
     case 'apt': command = `apt-get install -y -- ${escapeShellArg(safeName)}`; break;
     case 'dnf': command = `dnf install -y -- ${escapeShellArg(safeName)}`; break;
     case 'yum': command = `yum install -y -- ${escapeShellArg(safeName)}`; break;
-    case 'pacman': command = `pacman -S --noconfirm -- ${escapeShellArg(safeName)}`; break;
+    case 'pacman': command = `pacman -S --noconfirm --needed -- ${escapeShellArg(safeName)}`; break;
     case 'zypper': command = `zypper --non-interactive install -- ${escapeShellArg(safeName)}`; break;
     case 'snap': command = `snap install ${escapeShellArg(safeName)}`; break;
     case 'brew': command = `brew install ${escapeShellArg(safeName)}`; break;
