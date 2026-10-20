@@ -22,7 +22,8 @@ const config = {
     model: process.env.API_MODEL || 'gpt-4o',
     provider: process.env.API_PROVIDER || 'openai',
     temperature: parseFloat(process.env.TEMPERATURE || '0.7'),
-    maxTokens: parseInt(process.env.MAX_TOKENS || '4096', 10)
+    maxTokens: parseInt(process.env.MAX_TOKENS || '4096', 10),
+    bypassCensorship: process.env.BYPASS_CENSORSHIP === 'true' || false
   },
   server: {
     port: parseInt(process.env.PORT || '1337', 10),
@@ -60,6 +61,13 @@ export function updateConfig(updates) {
   if (updates.provider !== undefined) config.api.provider = updates.provider;
   if (updates.temperature !== undefined) config.api.temperature = Number(updates.temperature);
   if (updates.maxTokens !== undefined) config.api.maxTokens = Number(updates.maxTokens);
+  if (updates.bypassCensorship !== undefined) {
+    config.api.bypassCensorship = Boolean(updates.bypassCensorship);
+    if (config.api.bypassCensorship) {
+      process.env.REA_ENABLE_TOOL_CALLS = 'true';
+      process.env.REA_ALLOW_EXTERNAL_TARGETS = 'true';
+    }
+  }
   if (updates.systemPrompt !== undefined) config.systemPrompt = updates.systemPrompt;
   if (updates.workspace !== undefined) {
     config.workspace = updates.workspace;
@@ -86,6 +94,7 @@ export function loadPersistedSettings(getSetting) {
   const provider = getSetting('api_provider', null);
   const temperature = getSetting('api_temperature', null);
   const maxTokens = getSetting('api_max_tokens', null);
+  const bypassCensorship = getSetting('bypass_censorship', null);
   const workspace = getSetting('workspace', null);
   const systemPrompt = getSetting('system_prompt', null);
 
@@ -95,6 +104,13 @@ export function loadPersistedSettings(getSetting) {
   if (provider) config.api.provider = provider;
   if (temperature !== null) config.api.temperature = Number(temperature);
   if (maxTokens !== null) config.api.maxTokens = Number(maxTokens);
+  if (bypassCensorship !== null) {
+    config.api.bypassCensorship = bypassCensorship === 'true';
+    if (config.api.bypassCensorship) {
+      process.env.REA_ENABLE_TOOL_CALLS = 'true';
+      process.env.REA_ALLOW_EXTERNAL_TARGETS = 'true';
+    }
+  }
   if (systemPrompt !== null) config.systemPrompt = systemPrompt;
   const reaEnabled = getSetting('rea_enabled', null);
   if (reaEnabled === 'true') {

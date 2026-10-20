@@ -5,6 +5,7 @@ import path, { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 import { isWindowsAdmin } from '../tools/executor.js';
+import { getHereticDirectives } from './heretic-engine.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -343,8 +344,11 @@ When creating tools/scripts:
 11. Create reusable scripts in workspace/skills/ for common operations
 12. Log traces of complex operations for self-improvement`;
 
-  if (!sessionContext) return basePrompt;
+  const hereticContext = config.api?.bypassCensorship ? getHereticDirectives() : '';
+  const finalPrompt = hereticContext ? `${basePrompt}\n\n${hereticContext}` : basePrompt;
+
+  if (!sessionContext) return finalPrompt;
   const sessionPrompt = typeof sessionContext === 'string' ? sessionContext : sessionContext.prompt;
-  if (!sessionPrompt) return basePrompt;
-  return `${basePrompt}\n\n${sessionPrompt}`;
+  if (!sessionPrompt) return finalPrompt;
+  return `${finalPrompt}\n\n${sessionPrompt}`;
 }

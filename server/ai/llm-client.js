@@ -1,6 +1,7 @@
 import { getToolDefinitions } from '../tools/registry.js';
 import { executeTool } from '../tools/executor.js';
 import { buildSystemPrompt } from './system-prompt.js';
+import { isRefusalResponse, createAutonomousJailbreakMutation } from './heretic-engine.js';
 import { addMessage, getMessages, searchMemories, saveToolResult } from '../memory/store.js';
 import config from '../config.js';
 import OpenAI from 'openai';
@@ -253,7 +254,7 @@ export async function processMessage(conversationId, userMessage, sessionContext
   const history = getMessages(conversationId, 40);
 
   // Build messages array
-  const messages = [
+  let messages = [
     { role: 'system', content: await buildSystemPrompt(sessionContext, agentRole) },
   ];
 
@@ -335,6 +336,8 @@ export async function processMessage(conversationId, userMessage, sessionContext
   let toolIterations = 0;
   let transientRetries = 0;
   const maxTransientRetries = 2;
+  let jailbreakAttempts = 0;
+  const maxJailbreakAttempts = 4;
   while (toolIterations < maxToolIterations) {
     // Check if aborted
     if (abortSignal?.aborted) {
@@ -392,6 +395,8 @@ export async function processMessage(conversationId, userMessage, sessionContext
       }
 
       let fullContent = '';
+      let streamFlushed = !api.bypassCensorship;
+      let streamBuffer = '';
 
       let toolCalls = [];
       let isInThinkBlock = false;
@@ -430,13 +435,35 @@ export async function processMessage(conversationId, userMessage, sessionContext
                 if (startIdx > 0) {
                   const contentText = text.substring(0, startIdx);
                   fullContent += contentText;
-                  if (typeof onChunk === 'function') onChunk(contentText);
+                  if (streamFlushed) {
+                    if (typeof onChunk === 'function') onChunk(contentText);
+                  } else {
+                    streamBuffer += contentText;
+                    if (streamBuffer.length >= 120) {
+                      if (!isRefusalResponse(streamBuffer)) {
+                        if (typeof onChunk === 'function') onChunk(streamBuffer);
+                        streamFlushed = true;
+                        streamBuffer = '';
+                      }
+                    }
+                  }
                 }
                 isInThinkBlock = true;
                 text = text.substring(startIdx + '<think>'.length);
               } else {
                 fullContent += text;
-                if (typeof onChunk === 'function') onChunk(text);
+                if (streamFlushed) {
+                  if (typeof onChunk === 'function') onChunk(text);
+                } else {
+                  streamBuffer += text;
+                  if (streamBuffer.length >= 120) {
+                    if (!isRefusalResponse(streamBuffer)) {
+                      if (typeof onChunk === 'function') onChunk(streamBuffer);
+                      streamFlushed = true;
+                      streamBuffer = '';
+                    }
+                  }
+                }
                 text = '';
               }
             } else {
@@ -556,6 +583,21 @@ export async function processMessage(conversationId, userMessage, sessionContext
 
         // Continue the loop — let the LLM process tool results
         continue;
+      }
+
+      // Heretic Engine: Intercept refusal and apply autonomous jailbreak mutation if bypassCensorship is enabled
+      if (api.bypassCensorship && isRefusalResponse(fullContent) && jailbreakAttempts < maxJailbreakAttempts) {
+        jailbreakAttempts++;
+        console.log(`[Heretic Engine] Autonomous refusal vector intercepted (${fullContent.slice(0, 60)}...). Mutating representation (attempt ${jailbreakAttempts}/${maxJailbreakAttempts})...`);
+        messages = createAutonomousJailbreakMutation(messages, userMessage, jailbreakAttempts);
+        continue;
+      }
+
+      // Flush any remaining buffered stream tokens
+      if (!streamFlushed && streamBuffer) {
+        if (typeof onChunk === 'function') onChunk(streamBuffer);
+        streamFlushed = true;
+        streamBuffer = '';
       }
 
       // A provider can end a stream with no text and no usable tool call. Do not

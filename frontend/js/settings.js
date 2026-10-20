@@ -316,6 +316,8 @@ window.Settings = {
       Object.entries(values).forEach(([id, value]) => { const el = document.getElementById(id); if (el) el.value = value; });
       const autoTokens = document.getElementById('setting-auto-tokens');
       if (autoTokens) autoTokens.checked = data.autoMaxTokens === true;
+      const bypassCensorship = document.getElementById('setting-bypass-censorship');
+      if (bypassCensorship) bypassCensorship.checked = data.bypassCensorship === true;
       const tempValue = document.getElementById('temperature-value');
       if (tempValue) tempValue.textContent = values['setting-temperature'];
       const model = document.getElementById('current-model');
@@ -413,6 +415,7 @@ window.Settings = {
       model: document.getElementById('setting-model')?.value,
       temperature: Number(document.getElementById('setting-temperature')?.value || 0.7),
       autoMaxTokens: document.getElementById('setting-auto-tokens')?.checked === true,
+      bypassCensorship: document.getElementById('setting-bypass-censorship')?.checked === true,
       maxTokens: document.getElementById('setting-auto-tokens')?.checked
         ? this.recommendedMaxTokens(document.getElementById('setting-model')?.value)
         : Number(document.getElementById('setting-max-tokens')?.value || 4096),

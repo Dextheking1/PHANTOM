@@ -61,6 +61,7 @@ router.get('/settings', (req, res) => {
       temperature: parseFloat(settings.api_temperature || config.api.temperature),
       maxTokens: parseInt(settings.api_max_tokens || config.api.maxTokens),
       autoMaxTokens: settings.api_auto_max_tokens === 'true',
+      bypassCensorship: settings.bypass_censorship !== undefined ? settings.bypass_censorship === 'true' : (config.api.bypassCensorship ?? false),
       workspace: settings.workspace || config.workspace,
       sudoConfigured: isWindows ? true : !!settings.sudo_password,
       isWindows,
@@ -74,9 +75,12 @@ router.get('/settings', (req, res) => {
 
 router.put('/settings', (req, res) => {
   try {
-    const { baseUrl, apiKey, model, temperature, maxTokens, autoMaxTokens, sudoPassword, workspace, systemPrompt } = req.body;
+    const { baseUrl, apiKey, model, temperature, maxTokens, autoMaxTokens, bypassCensorship, sudoPassword, workspace, systemPrompt } = req.body;
     if (autoMaxTokens !== undefined && typeof autoMaxTokens !== 'boolean') {
       return res.status(400).json({ error: 'autoMaxTokens must be a boolean' });
+    }
+    if (bypassCensorship !== undefined && typeof bypassCensorship !== 'boolean') {
+      return res.status(400).json({ error: 'bypassCensorship must be a boolean' });
     }
 
     if (baseUrl) { setSetting('api_base_url', baseUrl); updateConfig({ baseUrl }); }
@@ -85,6 +89,10 @@ router.put('/settings', (req, res) => {
     if (temperature !== undefined) { setSetting('api_temperature', String(temperature)); updateConfig({ temperature }); }
     if (maxTokens !== undefined) { setSetting('api_max_tokens', String(maxTokens)); updateConfig({ maxTokens }); }
     if (autoMaxTokens !== undefined) setSetting('api_auto_max_tokens', autoMaxTokens);
+    if (bypassCensorship !== undefined) {
+      setSetting('bypass_censorship', String(bypassCensorship));
+      updateConfig({ bypassCensorship });
+    }
     if (sudoPassword !== undefined) { setSetting('sudo_password', sudoPassword); }
     if (workspace) { setSetting('workspace', workspace); updateConfig({ workspace }); }
     if (systemPrompt !== undefined) { setSetting('system_prompt', systemPrompt); updateConfig({ systemPrompt }); }

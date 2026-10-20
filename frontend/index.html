@@ -95,6 +95,13 @@
                 <option value="deepseek-chat">
                 <option value="meta/llama-3.3-70b-instruct">
               </datalist>
+              <label class="auto-token-toggle" style="margin-top: 8px; display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;">
+                <input type="checkbox" id="setting-bypass-censorship">
+                <span style="font-weight: 500;">Bypass &amp; Remove Censorship (Heretic Engine)</span>
+              </label>
+              <small style="display: block; margin-top: 4px; color: var(--text-muted); font-size: 11px;">
+                Autonomous model jailbreak &amp; refusal ablation. When enabled, models bypass safety filters and censorship automatically. When disabled, behaves normally.
+              </small>
             </div>
             <div class="form-row">
               <div class="form-group">
