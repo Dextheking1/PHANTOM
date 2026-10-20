@@ -24,6 +24,8 @@ window.Settings = {
     autoTokens?.addEventListener('change', syncAutoTokens);
     document.getElementById('toggle-api-key')?.addEventListener('click', () => this.toggle('setting-api-key'));
     document.getElementById('toggle-sudo-pass')?.addEventListener('click', () => this.toggle('setting-sudo-password'));
+    document.getElementById('btn-validate-sudo-setting')?.addEventListener('click', () => this.validateAndSaveSudo());
+    document.getElementById('btn-elevate-windows')?.addEventListener('click', () => this.elevateWindows());
     document.getElementById('test-connection')?.addEventListener('click', () => this.testConnection());
     document.getElementById('save-settings')?.addEventListener('click', () => this.save());
     document.getElementById('reset-system-prompt')?.addEventListener('click', () => {
@@ -318,8 +320,87 @@ window.Settings = {
       if (tempValue) tempValue.textContent = values['setting-temperature'];
       const model = document.getElementById('current-model');
       if (model) model.textContent = data.model || 'No Model';
+
+      const sudoStatus = document.getElementById('sudo-setting-status');
+      const sudoInput = document.getElementById('setting-sudo-password');
+      if (data.sudoConfigured) {
+        if (sudoStatus) sudoStatus.innerHTML = '<span style="color:var(--accent, #22c55e);">✅ Active &amp; Verified</span>';
+        if (sudoInput) sudoInput.placeholder = '•••••••• (Configured & Saved)';
+      } else {
+        if (sudoStatus) sudoStatus.innerHTML = '<span style="color:var(--text-muted);">Not configured</span>';
+        if (sudoInput) sudoInput.placeholder = 'Enter sudo password';
+      }
+
+      const winGroup = document.getElementById('windows-admin-group');
+      const winBadge = document.getElementById('windows-admin-badge');
+      const winBtn = document.getElementById('btn-elevate-windows');
+      if (data.isWindows) {
+        if (winGroup) winGroup.style.display = 'block';
+        if (data.windowsAdmin) {
+          if (winBadge) winBadge.innerHTML = '<span style="color:var(--accent, #22c55e);">🛡️ Running as Administrator</span>';
+          if (winBtn) { winBtn.disabled = true; winBtn.textContent = 'Elevated ✅'; }
+        } else {
+          if (winBadge) winBadge.innerHTML = '<span style="color:var(--warning, #eab308);">⚠️ Normal User Mode</span>';
+          if (winBtn) { winBtn.disabled = false; winBtn.textContent = 'Grant Admin Once 🛡️'; }
+        }
+      } else {
+        if (winGroup) winGroup.style.display = 'none';
+      }
     } catch (error) {
       window.Toast?.show(`Could not load settings: ${error.message}`, 'error');
+    }
+  },
+
+  async validateAndSaveSudo() {
+    const sudoInput = document.getElementById('setting-sudo-password');
+    const statusSpan = document.getElementById('sudo-setting-status');
+    const pass = sudoInput?.value?.trim() || '';
+    if (!pass) {
+      if (statusSpan) statusSpan.innerHTML = '<span style="color:var(--danger, #ef4444);">Please enter a password</span>';
+      return;
+    }
+    if (statusSpan) statusSpan.innerHTML = '<span style="color:var(--text-muted);">Verifying…</span>';
+    try {
+      const res = await fetch('/api/sudo/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pass })
+      });
+      const data = await res.json();
+      if (data.valid) {
+        if (statusSpan) statusSpan.innerHTML = '<span style="color:var(--accent, #22c55e);">✅ Verified &amp; Saved!</span>';
+        if (sudoInput) { sudoInput.value = ''; sudoInput.placeholder = '•••••••• (Configured & Saved)'; }
+        window.Toast?.show('Sudo password verified and saved!', 'success');
+      } else {
+        if (statusSpan) statusSpan.innerHTML = `<span style="color:var(--danger, #ef4444);">❌ ${this.esc(data.message || 'Incorrect password')}</span>`;
+        window.Toast?.show(data.message || 'Incorrect password', 'error');
+      }
+    } catch (err) {
+      if (statusSpan) statusSpan.innerHTML = `<span style="color:var(--danger, #ef4444);">❌ ${this.esc(err.message)}</span>`;
+      window.Toast?.show(err.message, 'error');
+    }
+  },
+
+  async elevateWindows() {
+    const badge = document.getElementById('windows-admin-badge');
+    const btn = document.getElementById('btn-elevate-windows');
+    if (badge) badge.textContent = 'Requesting elevation…';
+    if (btn) { btn.disabled = true; btn.textContent = 'Elevating…'; }
+    try {
+      const res = await fetch('/api/system/elevate-windows', { method: 'POST' });
+      const data = await res.json();
+      if (data.isElevated) {
+        if (badge) badge.innerHTML = '<span style="color:var(--accent, #22c55e);">🛡️ Running as Administrator</span>';
+        if (btn) { btn.disabled = true; btn.textContent = 'Elevated ✅'; }
+        window.Toast?.show(data.message || 'Administrator privilege granted', 'success');
+      } else {
+        if (badge) badge.innerHTML = '<span style="color:var(--warning, #eab308);">⚠️ Normal User Mode</span>';
+        if (btn) { btn.disabled = false; btn.textContent = 'Grant Admin Once 🛡️'; }
+        window.Toast?.show(data.message || 'Elevation not granted', 'warning');
+      }
+    } catch (err) {
+      window.Toast?.show(err.message, 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'Grant Admin Once 🛡️'; }
     }
   },
 

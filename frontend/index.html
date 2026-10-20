@@ -126,14 +126,29 @@
           </section>
 
           <section class="settings-section">
-            <h3>System access</h3>
-            <div class="form-group">
-              <label for="setting-sudo-password">Sudo password</label>
+            <h3>System access &amp; Elevation</h3>
+            <div class="form-group" id="sudo-setting-group">
+              <label for="setting-sudo-password">Sudo password (Linux / macOS)</label>
               <div class="input-with-toggle">
-                <input type="password" id="setting-sudo-password" placeholder="Only when elevation is needed">
+                <input type="password" id="setting-sudo-password" placeholder="Enter sudo password">
                 <button type="button" id="toggle-sudo-pass" class="btn-icon-sm" aria-label="Toggle sudo password visibility">◉</button>
               </div>
-              <small>Use only on a trusted local installation.</small>
+              <div style="display: flex; gap: 8px; margin-top: 8px; align-items: center; flex-wrap: wrap;">
+                <button type="button" id="btn-validate-sudo-setting" class="btn btn-secondary btn-sm">Verify &amp; Save Sudo</button>
+                <span id="sudo-setting-status" style="font-size: 12px; color: var(--text-muted);"></span>
+              </div>
+              <small>Saved locally so the AI agent runs privileged tools and package installs without stalling.</small>
+            </div>
+
+            <div class="form-group" id="windows-admin-group" style="margin-top: 14px;">
+              <label>Windows Administrator Elevation</label>
+              <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--bg-secondary); border-radius: var(--radius-sm); border: 1px solid var(--border-color); gap: 10px; flex-wrap: wrap;">
+                <div>
+                  <div id="windows-admin-badge" style="font-weight: 600; font-size: 13px;">Checking status…</div>
+                  <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Grants administrative access once for tool installs &amp; network inspection.</div>
+                </div>
+                <button type="button" id="btn-elevate-windows" class="btn btn-secondary btn-sm">Grant Admin Once 🛡️</button>
+              </div>
             </div>
           </section>
 

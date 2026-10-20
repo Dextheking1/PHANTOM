@@ -761,5 +761,38 @@ export function getToolDefinitions() {
         },
       },
     },
+    {
+      type: 'function',
+      function: {
+        name: 'agent_browser',
+        description: 'Vercel Agent Browser (https://github.com/vercel-labs/agent-browser) - real headless Chromium browser with CDP. Use this whenever browsing, scraping, downloading, or interacting with protected web sites (Cloudflare, PortSwigger, Akamai, Datadome, captchas) without bot blocks.',
+        parameters: {
+          type: 'object',
+          properties: {
+            action: {
+              type: 'string',
+              enum: ['open', 'snapshot', 'click', 'fill', 'get_text', 'screenshot', 'download', 'eval'],
+              description: 'Browser action to execute: open a URL, capture interactive snapshot, click an element ref (@e1, @e2) or selector, fill an input, get page/element text, take a screenshot, download a file, or evaluate JavaScript.',
+            },
+            url: {
+              type: 'string',
+              description: 'Target URL to open or download.',
+            },
+            selector: {
+              type: 'string',
+              description: 'Element ref (@e1, @e2) from snapshot or CSS selector to click, fill, or read.',
+            },
+            text: {
+              type: 'string',
+              description: 'Text to type/fill into the targeted input element, or JavaScript expression to evaluate.',
+            },
+            options: {
+              type: 'object',
+              description: 'Additional options such as annotate (for screenshots) or full (for full snapshot).',
+            },
+          },
+        },
+      },
+    },
   ];
 }

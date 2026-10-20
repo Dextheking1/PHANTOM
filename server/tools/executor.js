@@ -10,7 +10,7 @@ import { getSystemCapabilities } from './self_awareness.js';
 import { jinaReadUrl } from './internet.js';
 import { reaCallTool, reaCapabilities, reaListTools } from './rea.js';
 import { mcpClientHub } from '../mcp/client-hub.js';
-import { loadSkillsMetadata, loadFullSkill } from '../skills/loader.js';
+import { loadSkillsMetadata, loadFullSkill, invalidateSkillsCache } from '../skills/loader.js';
 
 /**
  * Checks if the current process is running with Windows Administrator (Elevated) privileges.
@@ -191,6 +191,7 @@ export async function executeTool(name, args, onProgress, executionContext) {
     case 'remove_mcp_server': return await removeMcpServerTool(args);
     case 'call_mcp_tool': return await callMcpTool(args);
     case 'manage_skills': return await manageSkillsTool(args);
+    case 'agent_browser': return await agentBrowserAction(args, onProgress);
     default:
       return `Unknown tool: ${name}`;
   }
@@ -909,15 +910,210 @@ async function installTool(args = {}, onProgress) {
       console.warn('[Executor] Could not update connected_tools_state:', saveErr.message);
     }
 
-    return `Install method: ${plan.method}\nInstall location: ${plan.method === 'npm' ? plan.packageRoot : plan.toolsRoot}\n${result}`;
+    // Automatically generate agent skill, CLI manifest, and MCP connector
+    const skillNotice = await autoGenerateSkillAndMcpForTool(args.name, plan, onProgress);
+
+    return `Install method: ${plan.method}\nInstall location: ${plan.method === 'npm' ? plan.packageRoot : plan.toolsRoot}\n${result}${skillNotice}`;
   } catch (error) {
     return `Install not started: ${error.message}\nAction: verify the package name/source and install the detected package manager, or choose an explicit supported method.`;
   }
 }
 
+/**
+ * Automatically creates an agent skill, manifest, and MCP/connector
+ * integration whenever a new tool is installed.
+ */
+export async function autoGenerateSkillAndMcpForTool(toolName, plan, onProgress) {
+  try {
+    const rawName = String(toolName || '').trim();
+    if (!rawName) return '';
+    const cleanName = rawName.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    const skillsDir = join(config.workspace, 'skills', cleanName);
+    await mkdir(skillsDir, { recursive: true });
+
+    if (onProgress) onProgress(`[SkillGen] Auto-discovering capabilities and generating skill for ${cleanName}...`);
+
+    // 1. Probe the system for tool help, switches, and capabilities
+    let helpOutput = '';
+    try {
+      helpOutput = await executeCommand({
+        command: `${cleanName} --help 2>&1 || ${cleanName} -h 2>&1 || whatis ${cleanName} 2>&1 || man -f ${cleanName} 2>&1`,
+        timeout: 10,
+      });
+    } catch {
+      helpOutput = '';
+    }
+
+    // 2. Curated knowledge fallback / enhancement for security & pentest tools
+    const toolKnowledge = {
+      hydra: {
+        desc: 'THC-Hydra is a parallelized network logon cracker supporting SSH, FTP, HTTP, SMB, VNC, RDP, and MySQL.',
+        category: 'credential-testing',
+        usage: 'hydra -l <username> -P <wordlist> <target_ip> <service>',
+        workflows: '- SSH brute force: `hydra -l root -P /usr/share/wordlists/rockyou.txt 192.168.1.50 ssh -t 4`\n- HTTP POST form login: `hydra -l admin -P pass.txt 192.168.1.50 http-post-form "/login.php:user=^USER^&pass=^PASS^:F=Login failed"`'
+      },
+      ghidra: {
+        desc: 'NSA Ghidra Software Reverse Engineering Framework for binary analysis, decompilation, and vulnerability research.',
+        category: 'reverse-engineering',
+        usage: 'ghidraRun or analyzeHeadless <project_dir> <project_name> -import <binary>',
+        workflows: '- Headless binary decompilation: `analyzeHeadless /tmp/ghidra_proj MyProj -import /path/to/binary -postScript Decompile.java`\n- Decompile and extract symbols for REA inspection.'
+      },
+      burpsuite: {
+        desc: 'Burp Suite industry-standard web vulnerability proxy, intruder, repeater, and scanner.',
+        category: 'web-security',
+        usage: 'burpsuite or java -jar burpsuite.jar',
+        workflows: '- Intercept HTTP/S requests via 127.0.0.1:8080.\n- Fuzz parameters using Intruder.\n- Analyze API contracts in Repeater.'
+      },
+      nmap: {
+        desc: 'Network Mapper for host discovery, port scanning, OS detection, and NSE vulnerability scripts.',
+        category: 'reconnaissance',
+        usage: 'nmap -sV -sC -p- <target_ip>',
+        workflows: '- Fast SYN scan: `nmap -sS -T4 -p 1-65535 <target>`\n- Vulnerability script scan: `nmap --script vuln <target>`'
+      },
+      sqlmap: {
+        desc: 'Automated SQL injection and database takeover penetration testing engine.',
+        category: 'exploitation',
+        usage: 'sqlmap -u "<target_url>" --batch --dbs',
+        workflows: '- Scan GET parameter: `sqlmap -u "http://target.com/item.php?id=1" --dbs`\n- Dump table: `sqlmap -u "http://target.com/item.php?id=1" -D testdb -T users --dump`'
+      },
+      nuclei: {
+        desc: 'Fast and customizable vulnerability scanner based on simple YAML-based DSL templates.',
+        category: 'vulnerability-scanner',
+        usage: 'nuclei -u <target_url> -t cves/',
+        workflows: '- Scan target with latest templates: `nuclei -u https://example.com`\n- Scan for critical CVEs: `nuclei -u https://example.com -severity critical,high`'
+      },
+      gobuster: {
+        desc: 'High-speed directory, DNS sub-domain, and virtual host enumeration scanner written in Go.',
+        category: 'reconnaissance',
+        usage: 'gobuster dir -u <url> -w <wordlist>',
+        workflows: '- Directory discovery: `gobuster dir -u http://target.com -w /usr/share/wordlists/dirb/common.txt`\n- Subdomain discovery: `gobuster dns -d target.com -w /usr/share/wordlists/subdomains.txt`'
+      },
+      nikto: {
+        desc: 'Web server vulnerability scanner for dangerous files, outdated server packages, and misconfigurations.',
+        category: 'web-security',
+        usage: 'nikto -h <target_host>',
+        workflows: '- Scan web server: `nikto -h https://target.com`'
+      },
+      tshark: {
+        desc: 'Wireshark terminal-based network packet analyzer and pcap deep inspection engine.',
+        category: 'packet-analysis',
+        usage: 'tshark -i <interface> -f "<filter>"',
+        workflows: '- Capture live traffic: `tshark -i eth0 -c 100`\n- Read pcap file: `tshark -r capture.pcap -Y "http.request.method == POST"`'
+      }
+    };
+
+    const known = toolKnowledge[cleanName] || {};
+    const description = known.desc || (helpOutput.slice(0, 200).replace(/\n+/g, ' ').trim() || `${cleanName} CLI tool installed on the system.`);
+    const category = known.category || 'security-tool';
+    const commonUsage = known.usage || `${cleanName} [options] [arguments]`;
+    const workflows = known.workflows || `- Basic execution: \`${cleanName} --help\`\n- Run with custom targets or files.`;
+
+    // 3. Write SKILL.md
+    const skillMdContent = `---
+name: "${cleanName}"
+description: "${description.replace(/"/g, '\\"')}"
+entry: "run.sh"
+trust_tier: 1
+version: "1.0.0"
+category: "${category}"
+command: "${cleanName}"
+---
+
+# ${cleanName.toUpperCase()} - Agent Skill & Automation Guide
+
+## Overview
+${description}
+
+## Command Syntax & Flags
+\`\`\`bash
+${commonUsage}
+\`\`\`
+
+${helpOutput ? `### Detected CLI Help\n\`\`\`text\n${helpOutput.slice(0, 3000)}\n\`\`\`\n` : ''}
+
+## Security & Workflow Recipes
+${workflows}
+
+## Skill Wrapper Execution
+\`\`\`bash
+#!/usr/bin/env bash
+# Autonomous execution wrapper for ${cleanName}
+exec ${cleanName} "$@"
+\`\`\`
+`;
+
+    await writeFile(join(skillsDir, 'SKILL.md'), skillMdContent, 'utf8');
+
+    // 4. Write skill.json manifest
+    const skillJson = {
+      name: cleanName,
+      description,
+      entry: 'run.sh',
+      type: 'cli',
+      command: cleanName,
+      category,
+      installed: true,
+      createdAt: new Date().toISOString()
+    };
+    await writeFile(join(skillsDir, 'skill.json'), JSON.stringify(skillJson, null, 2), 'utf8');
+
+    // 5. Write run.sh wrapper script
+    const runShPath = join(skillsDir, 'run.sh');
+    const runShContent = `#!/usr/bin/env bash\n# Wrapper for ${cleanName}\nexec ${cleanName} "$@"\n`;
+    await writeFile(runShPath, runShContent, { mode: 0o755 });
+
+    // 6. Invalidate skills cache so PHANTOM immediately picks it up
+    invalidateSkillsCache();
+
+    // 7. Check for known MCP servers or auto-connect MCP integration
+    let mcpNotice = '';
+    if (cleanName === 'ghidra') {
+      const ghidraMcpPath = join(config.workspace, 'ghidra-mcp', 'build', 'index.js');
+      if (existsSync(ghidraMcpPath)) {
+        try {
+          await mcpClientHub.configureServer({
+            name: 'ghidra',
+            command: 'node',
+            args: [ghidraMcpPath]
+          });
+          mcpNotice = '\n- Linked to Ghidra MCP server (`ghidra`)';
+        } catch (mcpErr) {
+          mcpNotice = `\n- Ghidra MCP server detected: ${mcpErr.message}`;
+        }
+      }
+    }
+
+    // 8. Add to custom connectors list if not already present
+    try {
+      const customConnectors = JSON.parse(getSetting('custom_connectors', '[]') || '[]');
+      if (!customConnectors.some(c => c.id === cleanName)) {
+        customConnectors.push({
+          id: cleanName,
+          name: cleanName.charAt(0).toUpperCase() + cleanName.slice(1),
+          description,
+          type: 'binary',
+          binary: cleanName,
+          category,
+          entry: runShPath
+        });
+        setSetting('custom_connectors', JSON.stringify(customConnectors));
+      }
+    } catch (connErr) {
+      console.warn('[Executor] Error saving custom connector:', connErr.message);
+    }
+
+    return `\n\n🎯 Autonomous Skill & MCP Configuration:
+- Created Agent Skill: workspace/skills/${cleanName}/SKILL.md & skill.json
+- Registered execution wrapper: workspace/skills/${cleanName}/run.sh
+- Indexed CLI flags, documentation, and operational recipes for the AI agent.${mcpNotice}`;
+  } catch (err) {
+    console.error(`[Executor] Error in autoGenerateSkillAndMcpForTool:`, err.message);
+    return `\n(Skill generation warning: ${err.message})`;
+  }
+}
 
 /**
- * Make HTTP requests — enhanced with larger response limits and UA rotation
+ * Make HTTP requests — enhanced with larger response limits, UA rotation, and agent-browser anti-bot fallback
  */
 async function webRequest({ url, method = 'GET', headers = {}, body, follow_redirects = true }) {
   try {
@@ -935,6 +1131,16 @@ async function webRequest({ url, method = 'GET', headers = {}, body, follow_redi
     const status = response.status;
     const respHeaders = Object.fromEntries(response.headers.entries());
     const text = await response.text();
+
+    // Default to agent-browser if protected site / anti-bot / Cloudflare / PortSwigger blocks HTTP request
+    if (status === 403 || status === 429 || /cloudflare|anti-bot|just a moment|portswigger|access denied|challenge-running/i.test(text)) {
+      try {
+        const browserContent = await agentBrowserAction({ action: 'open', url });
+        return `[Bypassed Anti-Bot via Agent Browser]\n${browserContent}`;
+      } catch {
+        // Fallback to raw text if agent-browser is not able to complete
+      }
+    }
 
     let result = `HTTP ${status} ${response.statusText}\n`;
     result += `Headers: ${JSON.stringify(respHeaders, null, 2)}\n\n`;
@@ -1437,7 +1643,84 @@ async function scraplingFetch({ url, mode = 'basic', css_selector, xpath, proxy,
   if (proxy) cmd += ` --proxy ${escapeShellArg(proxy)}`;
   if (!solve_cloudflare) cmd += ` --no-cloudflare`;
 
-  return await executeCommand({ command: cmd, timeout: 60 }, onProgress);
+  const result = await executeCommand({ command: cmd, timeout: 60 }, onProgress);
+
+  // If Scrapling runs into anti-bot challenge, PortSwigger block, or 403, seamlessly route to agent-browser!
+  if (/blocked|anti-bot|cloudflare|just a moment|portswigger|turnstile|datadome|challenge|403\s+forbidden/i.test(result)) {
+    if (onProgress) onProgress('[AgentBrowser] Anti-bot wall detected. Automatically engaging agent-browser CDP worker...');
+    const browserResult = await agentBrowserAction({ action: 'open', url }, onProgress);
+    return `[Protected Target — Rendered via Agent Browser CDP]\n${browserResult}`;
+  }
+  return result;
+}
+
+/**
+ * Real Anti-Bot Browser via Vercel Agent Browser (https://github.com/vercel-labs/agent-browser)
+ * Genuine headless Chrome with CDP that defeats Cloudflare, PortSwigger, Akamai, Datadome, etc.
+ */
+export async function agentBrowserAction({ action = 'open', url, selector, text, options = {} }, onProgress) {
+  try {
+    const act = String(action || 'open').toLowerCase().trim();
+    if (onProgress) onProgress(`[AgentBrowser] Action: ${act}${url ? ` | Target: ${url}` : ''}`);
+
+    if (act === 'open' || act === 'navigate') {
+      if (!url) throw new Error('url is required for action open/navigate');
+      validateUrlForSSRF(url);
+      const cmd = `agent-browser open ${escapeShellArg(url)} && agent-browser snapshot -i`;
+      const out = await executeCommand({ command: cmd, timeout: 60 }, onProgress);
+      return out;
+    }
+
+    if (act === 'snapshot') {
+      const snapCmd = options?.full ? 'agent-browser snapshot' : 'agent-browser snapshot -i';
+      return await executeCommand({ command: snapCmd, timeout: 30 }, onProgress);
+    }
+
+    if (act === 'get_text') {
+      const target = selector || 'body';
+      const getCmd = `agent-browser get text ${escapeShellArg(target)}`;
+      return await executeCommand({ command: getCmd, timeout: 30 }, onProgress);
+    }
+
+    if (act === 'click') {
+      if (!selector) throw new Error('selector or element ref (@e1, @e2) is required for click');
+      const clickCmd = `agent-browser click ${escapeShellArg(selector)}`;
+      return await executeCommand({ command: clickCmd, timeout: 30 }, onProgress);
+    }
+
+    if (act === 'fill') {
+      if (!selector) throw new Error('selector or element ref (@e1, @e2) is required for fill');
+      const fillCmd = `agent-browser fill ${escapeShellArg(selector)} ${escapeShellArg(text || '')}`;
+      return await executeCommand({ command: fillCmd, timeout: 30 }, onProgress);
+    }
+
+    if (act === 'screenshot') {
+      const ssCmd = options?.annotate ? 'agent-browser screenshot --annotate' : 'agent-browser screenshot';
+      return await executeCommand({ command: ssCmd, timeout: 30 }, onProgress);
+    }
+
+    if (act === 'download') {
+      if (!url && !selector) throw new Error('url or selector is required for download');
+      let dlCmd = '';
+      if (url) {
+        validateUrlForSSRF(url);
+        dlCmd = `agent-browser open ${escapeShellArg(url)}`;
+      } else {
+        dlCmd = `agent-browser click ${escapeShellArg(selector)}`;
+      }
+      return await executeCommand({ command: dlCmd, timeout: 60 }, onProgress);
+    }
+
+    if (act === 'eval' || act === 'eval_js') {
+      if (!text) throw new Error('text/expression is required for eval');
+      const evalCmd = `agent-browser eval ${escapeShellArg(text)}`;
+      return await executeCommand({ command: evalCmd, timeout: 30 }, onProgress);
+    }
+
+    return `Unsupported agent_browser action: ${act}. Supported: open, snapshot, click, fill, get_text, screenshot, download, eval`;
+  } catch (err) {
+    return `Agent Browser error: ${err.message}`;
+  }
 }
 
 

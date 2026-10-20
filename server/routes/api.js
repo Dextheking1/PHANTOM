@@ -356,6 +356,41 @@ router.post('/sudo/validate', async (req, res) => {
   }
 });
 
+router.get('/sudo/status', (req, res) => {
+  const isWindows = process.platform === 'win32';
+  const isAdmin = isWindowsAdmin();
+  const sudoPassword = getSetting('sudo_password', '');
+  res.json({
+    isWindows,
+    isElevated: isWindows ? isAdmin : !!sudoPassword,
+    sudoConfigured: isWindows ? isAdmin : !!sudoPassword,
+    message: isWindows
+      ? (isAdmin ? 'Running in Windows Administrative mode 🛡️' : 'Running in Windows Normal User mode 💻')
+      : (sudoPassword ? 'Sudo password configured and verified ✅' : 'No sudo password configured ⚠️')
+  });
+});
+
+router.post('/system/elevate-windows', async (req, res) => {
+  if (process.platform !== 'win32') {
+    return res.json({ success: false, message: 'Elevation helper is for Windows only.' });
+  }
+  try {
+    if (isWindowsAdmin()) {
+      return res.json({ success: true, isElevated: true, message: 'Already running as Administrator 🛡️' });
+    }
+    // Launch PowerShell elevation prompt once
+    await execAsync('powershell -Command "Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden"', { timeout: 15000 });
+    const nowAdmin = isWindowsAdmin();
+    return res.json({
+      success: true,
+      isElevated: nowAdmin,
+      message: nowAdmin ? 'Administrator privilege granted 🛡️' : 'Elevation prompt dismissed or denied.'
+    });
+  } catch (err) {
+    return res.json({ success: false, message: `Elevation error: ${err.message}` });
+  }
+});
+
 
 // ─── System Update ───
 router.get('/system/check-update', async (req, res) => {

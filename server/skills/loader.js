@@ -4,6 +4,10 @@ import config from '../config.js';
 
 let skillsCache = null;
 
+export function invalidateSkillsCache() {
+  skillsCache = null;
+}
+
 /**
  * Loads the basic metadata (name, description) for all available skills.
  * Uses progressive disclosure to keep token count low.
