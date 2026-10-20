@@ -163,6 +163,45 @@ function notifyToolCallback(callback, payload, label) {
   }
 }
 
+/**
+ * Adapt messages specifically for sensitive backends like NVIDIA NIM / Nemotron / vLLM.
+ * Many non-OpenAI endpoints fail with 500 when:
+ * 1. An assistant message with tool_calls has content: null (must be empty string "" or omitted)
+ * 2. Tool response messages have missing or invalid fields
+ * 3. Empty messages are passed
+ */
+export function formatMessagesForModel(rawMessages, isNvidia = false) {
+  if (!Array.isArray(rawMessages)) return [];
+  return rawMessages.map(msg => {
+    if (!msg || typeof msg !== 'object') return { role: 'user', content: '' };
+    const cleaned = { role: msg.role };
+
+    if (msg.role === 'assistant') {
+      // NVIDIA NIM / Nemotron crashes with 500 when content is null
+      cleaned.content = typeof msg.content === 'string' ? msg.content : (isNvidia ? '' : (msg.content ?? ''));
+      if (Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
+        cleaned.tool_calls = msg.tool_calls.map(tc => ({
+          id: String(tc.id || 'call_0'),
+          type: 'function',
+          function: {
+            name: String(tc.function?.name || ''),
+            arguments: typeof tc.function?.arguments === 'string' ? tc.function.arguments : JSON.stringify(tc.function?.arguments || {}),
+          },
+        }));
+      }
+    } else if (msg.role === 'tool') {
+      cleaned.content = typeof msg.content === 'string' ? msg.content : serializeToolValue(msg.content);
+      if (msg.tool_call_id) cleaned.tool_call_id = String(msg.tool_call_id);
+      if (msg.name) cleaned.name = String(msg.name);
+    } else {
+      cleaned.content = typeof msg.content === 'string' ? msg.content : (msg.content !== undefined && msg.content !== null ? String(msg.content) : '');
+    }
+
+    return cleaned;
+  });
+}
+
+
 function isTransientProviderError(error) {
   const message = String(error?.message || error || '').toLowerCase();
   return [408, 409, 425, 429, 500, 502, 503, 504].includes(Number(error?.status))
@@ -321,9 +360,12 @@ export async function processMessage(conversationId, userMessage, sessionContext
           const effectiveTools = (agentRole === 'planner') ? undefined : (tools.length > 0 ? tools : undefined);
           const effectiveToolChoice = (agentRole === 'planner') ? undefined : (tools.length > 0 ? 'auto' : undefined);
 
+          // Sanitize and adapt messages for strict models/endpoints (e.g., NVIDIA NIM, Nemotron)
+          const sanitizedMessages = formatMessagesForModel(messages, isNvidia);
+
           response = await client.chat.completions.create({
             model: targetModel,
-            messages,
+            messages: sanitizedMessages,
             tools: effectiveTools,
             tool_choice: effectiveToolChoice,
             temperature: api.temperature,
@@ -437,7 +479,7 @@ export async function processMessage(conversationId, userMessage, sessionContext
         // Save assistant message with tool calls
         const assistantMsg = {
           role: 'assistant',
-          content: fullContent || null,
+          content: fullContent || '',
           tool_calls: normalizedToolCalls.map(call => call.assistantCall),
         };
         addMessage(conversationId, assistantMsg);
@@ -542,6 +584,30 @@ export async function processMessage(conversationId, userMessage, sessionContext
           // Fall through to the user-facing error if the operation was stopped.
         }
       }
+
+      // If one or more tools were already executed, the model might fail with 500
+      // when multi-turn tool calling is requested. Gracefully recover by synthesizing
+      // the final response with the tool outputs without throwing an error!
+      if (toolIterations > 0) {
+        console.warn(`[LLMClient] Provider threw error after tool execution (${error.message}). Synthesizing final answer without tools...`);
+        try {
+          return await produceToolLimitSummary({
+            conversationId,
+            messages,
+            maxToolIterations,
+            client,
+            api,
+            targetModel,
+            abortSignal,
+            onChunk,
+            onThinking,
+            customNotice: '', // No scary error notice, just give the final answer
+          });
+        } catch (synthesisError) {
+          console.warn(`[LLMClient] Fallback synthesis also failed:`, synthesisError.message);
+        }
+      }
+
       const errMsg = `⚠️ LLM Error: ${error.message}`;
       if (typeof onError === 'function') onError(errMsg);
       if (typeof onChunk === 'function') {
@@ -580,27 +646,31 @@ export async function produceToolLimitSummary({
   abortSignal,
   onChunk,
   onThinking,
+  customNotice = null,
 }) {
-  const notice = `[PHANTOM] Tool-call budget reached after ${maxToolIterations} tool rounds.`;
+  const notice = customNotice !== null ? customNotice : `[PHANTOM] Tool-call budget reached after ${maxToolIterations} tool rounds.`;
   const summaryInstruction = {
     role: 'user',
-    content: 'The tool-call budget is exhausted. Do not call tools. Provide a concise final answer from the available conversation and tool results. Clearly separate verified findings, partial progress, and the next recommended step.',
+    content: 'Review the tool results from the conversation above and provide a complete final answer and commentary for the user. Do not call any tools. Summarize findings, actions taken, and next recommendations clearly.',
   };
 
-  if (typeof onChunk === 'function') onChunk(`${notice}\n\n`);
+  if (notice && typeof onChunk === 'function') onChunk(`${notice}\n\n`);
 
   if (abortSignal?.aborted) {
-    const stopped = `${notice}\n\nThe operation was stopped before the partial result could be summarized.`;
-    if (typeof onChunk === 'function') onChunk(stopped.slice(notice.length + 2));
+    const stopped = `${notice ? `${notice}\n\n` : ''}The operation was stopped before the final response could be summarized.`;
+    if (typeof onChunk === 'function') onChunk(stopped.slice(notice ? notice.length + 2 : 0));
     addMessage(conversationId, { role: 'assistant', content: stopped });
     return stopped;
   }
 
   try {
     await paceProvider(client, api, abortSignal);
+    const isNvidia = (api.baseUrl || '').includes('nvidia') || (api.apiKey || '').startsWith('nvapi-');
+    const sanitizedMessages = formatMessagesForModel([...messages, summaryInstruction], isNvidia);
+
     const response = await client.chat.completions.create({
       model: targetModel,
-      messages: [...messages, summaryInstruction],
+      messages: sanitizedMessages,
       // No tools/tool_choice here is intentional: this is a terminal summary.
       temperature: api.temperature,
       max_tokens: api.maxTokens,
