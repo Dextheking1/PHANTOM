@@ -60,11 +60,24 @@ window.Management = {
     this.isOpen = true;
     this.loadMCPServers();
     this.loadSkills();
+    if (this._pollTimer) clearInterval(this._pollTimer);
+    this._pollTimer = setInterval(() => {
+      if (this.isOpen) {
+        this.loadMCPServers();
+      } else {
+        clearInterval(this._pollTimer);
+        this._pollTimer = null;
+      }
+    }, 4000);
   },
 
   close() {
     this.panel.classList.add('hidden');
     this.isOpen = false;
+    if (this._pollTimer) {
+      clearInterval(this._pollTimer);
+      this._pollTimer = null;
+    }
   },
 
   // ─── MCP Servers ───
@@ -77,16 +90,28 @@ window.Management = {
         list.innerHTML = '<p class="empty-msg">No MCP servers configured yet</p>';
         return;
       }
-      list.innerHTML = servers.map(s => `
-        <div class="manage-item">
-          <div class="manage-item-info">
-            <strong>🔌 ${this.esc(s.name || 'Unnamed')}</strong>
-            <small>${this.esc(s.command || s.url || '')}</small>
-            <span class="badge">${s.transport || 'stdio'}</span>
+      list.innerHTML = servers.map(s => {
+        const isConnected = s.connected;
+        const statusBadge = isConnected
+          ? `<span style="font-size: 10px; color: #10b981; background: rgba(16,185,129,0.12); padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(16,185,129,0.25);">● Active (${s.toolCount || 0} tools)</span>`
+          : (s.error
+            ? `<span style="font-size: 10px; color: var(--danger); background: rgba(239,68,68,0.12); padding: 2px 6px; border-radius: 4px;" title="${this.esc(s.error)}">● Error</span>`
+            : `<span style="font-size: 10px; color: var(--text-muted); background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px;">● Configured</span>`);
+
+        return `
+          <div class="manage-item" style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <div class="manage-item-info" style="flex: 1; min-width: 0;">
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                <strong>🔌 ${this.esc(s.name || 'Unnamed')}</strong>
+                ${statusBadge}
+                <span class="badge">${s.transport || 'stdio'}</span>
+              </div>
+              <small style="display: block; margin-top: 3px; word-break: break-all; color: var(--text-muted);">${this.esc(s.command ? `${s.command} ${(s.args || []).join(' ')}` : s.url || '')}</small>
+            </div>
+            <button type="button" class="btn-icon-sm danger" onclick="Management.deleteMCP('${s.id}')" title="Remove" aria-label="Remove MCP server">🗑️</button>
           </div>
-          <button type="button" class="btn-icon-sm danger" onclick="Management.deleteMCP('${s.id}')" title="Remove" aria-label="Remove MCP server">🗑️</button>
-        </div>
-      `).join('');
+        `;
+      }).join('');
     } catch (err) {
       console.error(err);
       window.Toast.show('Failed to load MCP servers', 'error');

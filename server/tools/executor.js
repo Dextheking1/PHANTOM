@@ -1,14 +1,16 @@
 import { spawn, execSync } from 'child_process';
 import { existsSync } from 'fs';
-import { readFile, writeFile, mkdir, readdir, stat, rename, unlink, realpath } from 'fs/promises';
+import { readFile, writeFile, mkdir, readdir, stat, rename, unlink, realpath, rm } from 'fs/promises';
 import { randomUUID } from 'node:crypto';
 import { dirname, resolve, join, sep, delimiter, basename, relative, isAbsolute } from 'path';
 import os from 'os';
-import { saveMemory, hybridSearchMemories, getMemoryStats, searchConversations, createConversation, getSetting, setSetting } from '../memory/store.js';
+import { saveMemory, hybridSearchMemories, getMemoryStats, searchConversations, createConversation, getSetting, setSetting, getMCPServers, removeMCPServer } from '../memory/store.js';
 import config from '../config.js';
 import { getSystemCapabilities } from './self_awareness.js';
 import { jinaReadUrl } from './internet.js';
 import { reaCallTool, reaCapabilities, reaListTools } from './rea.js';
+import { mcpClientHub } from '../mcp/client-hub.js';
+import { loadSkillsMetadata, loadFullSkill } from '../skills/loader.js';
 
 /**
  * Checks if the current process is running with Windows Administrator (Elevated) privileges.
@@ -183,6 +185,12 @@ export async function executeTool(name, args, onProgress, executionContext) {
     case 'rea_capabilities': return JSON.stringify(reaCapabilities());
     case 'rea_list_tools': return JSON.stringify(await reaListTools(args));
     case 'rea_call_tool': return JSON.stringify(await reaCallTool(args));
+    // Autonomous MCP & Skill Management
+    case 'configure_mcp_server': return await configureMcpServerTool(args);
+    case 'list_mcp_servers': return await listMcpServersTool();
+    case 'remove_mcp_server': return await removeMcpServerTool(args);
+    case 'call_mcp_tool': return await callMcpTool(args);
+    case 'manage_skills': return await manageSkillsTool(args);
     default:
       return `Unknown tool: ${name}`;
   }
@@ -238,6 +246,84 @@ async function writeSkill({ name, description, code, entry_point = 'script.py' }
     return `Skill "${skillName}" created successfully at ${skillsDir}.`;
   } catch (err) {
     return `Error creating skill: ${err.message}`;
+  }
+}
+
+async function configureMcpServerTool(args = {}) {
+  try {
+    const result = await mcpClientHub.configureServer(args);
+    return JSON.stringify(result, null, 2);
+  } catch (err) {
+    return `Error configuring MCP server: ${err.message}`;
+  }
+}
+
+async function listMcpServersTool() {
+  try {
+    const servers = await mcpClientHub.listServers();
+    return JSON.stringify(servers, null, 2);
+  } catch (err) {
+    return `Error listing MCP servers: ${err.message}`;
+  }
+}
+
+async function removeMcpServerTool(args = {}) {
+  try {
+    const target = args.name_or_id || args.id || args.name;
+    if (!target) throw new Error('name_or_id is required');
+    await mcpClientHub.disconnectServer(target);
+    const stored = getMCPServers().find(s => s.id === target || s.name === target);
+    if (stored) {
+      removeMCPServer(stored.id);
+    }
+    return `MCP Server "${target}" removed and disconnected successfully.`;
+  } catch (err) {
+    return `Error removing MCP server: ${err.message}`;
+  }
+}
+
+async function callMcpTool(args = {}) {
+  try {
+    const { server_name, tool_name, arguments: toolArgs = {} } = args;
+    if (!server_name || !tool_name) throw new Error('server_name and tool_name are required.');
+    const result = await mcpClientHub.callTool(server_name, tool_name, toolArgs);
+    return typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+  } catch (err) {
+    return `Error calling MCP tool: ${err.message}`;
+  }
+}
+
+async function manageSkillsTool(args = {}) {
+  try {
+    const action = String(args.action || 'list').toLowerCase();
+    const skillsDir = join(config.workspace, 'skills');
+
+    if (action === 'list') {
+      const skills = loadSkillsMetadata();
+      return JSON.stringify(skills, null, 2);
+    }
+
+    if (action === 'info') {
+      if (!args.name) throw new Error('Skill name is required for info action.');
+      const full = loadFullSkill(args.name);
+      if (!full) return `Skill "${args.name}" not found.`;
+      return JSON.stringify(full, null, 2);
+    }
+
+    if (action === 'delete') {
+      if (!args.name) throw new Error('Skill name is required for delete action.');
+      const safeName = validateSkillPart(args.name, 'skill name');
+      const targetDir = join(skillsDir, safeName);
+      if (existsSync(targetDir)) {
+        await rm(targetDir, { recursive: true, force: true });
+        return `Skill "${safeName}" removed successfully.`;
+      }
+      return `Skill "${safeName}" does not exist.`;
+    }
+
+    return `Unsupported action: ${action}`;
+  } catch (err) {
+    return `Error managing skills: ${err.message}`;
   }
 }
 

@@ -12,6 +12,7 @@ import {
 import { getToolDefinitions } from '../tools/registry.js';
 import { isWindowsAdmin, executeCommand } from '../tools/executor.js';
 import { reaCapabilities, reaListTools, reaCallTool } from '../tools/rea.js';
+import { mcpClientHub } from '../mcp/client-hub.js';
 import os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -291,25 +292,27 @@ router.get('/memory', (req, res) => {
 });
 
 // ─── MCP Servers ───
-router.get('/mcp/servers', (req, res) => {
+router.get('/mcp/servers', async (req, res) => {
   try {
-    res.json(getMCPServers());
+    const servers = await mcpClientHub.listServers();
+    res.json(servers);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-router.post('/mcp/servers', (req, res) => {
+router.post('/mcp/servers', async (req, res) => {
   try {
-    const id = addMCPServer(req.body);
-    res.json({ success: true, id });
+    const result = await mcpClientHub.configureServer(req.body);
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-router.delete('/mcp/servers/:id', (req, res) => {
+router.delete('/mcp/servers/:id', async (req, res) => {
   try {
+    await mcpClientHub.disconnectServer(req.params.id);
     removeMCPServer(req.params.id);
     res.json({ success: true });
   } catch (err) {

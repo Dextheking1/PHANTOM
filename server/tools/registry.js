@@ -646,5 +646,120 @@ export function getToolDefinitions() {
         },
       },
     },
+    {
+      type: 'function',
+      function: {
+        name: 'configure_mcp_server',
+        description: 'Autonomously configure, save, and connect an MCP (Model Context Protocol) server to PHANTOM. This saves the server configuration to the workbench database and immediately connects to discover its tools.',
+        parameters: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              description: 'Unique identifier or name for the MCP server (e.g., "ghidra_mcp", "github_mcp", "filesystem").',
+            },
+            command: {
+              type: 'string',
+              description: 'Executable command to start the MCP server (e.g., "npx", "node", "python3", "uvx", or binary path).',
+            },
+            args: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Command line arguments for the MCP server command (e.g., ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]).',
+            },
+            transport: {
+              type: 'string',
+              enum: ['stdio', 'sse', 'http'],
+              default: 'stdio',
+              description: 'Transport type used by the MCP server ("stdio" for process pipe, "sse" for server-sent events).',
+            },
+            url: {
+              type: 'string',
+              description: 'URL endpoint when transport is "sse" or "http".',
+            },
+            env: {
+              type: 'object',
+              description: 'Optional environment variables needed by the MCP server.',
+            },
+          },
+          required: ['name'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'list_mcp_servers',
+        description: 'List all configured MCP servers in PHANTOM, their active connection status, and the tools they provide.',
+        parameters: {
+          type: 'object',
+          properties: {},
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'remove_mcp_server',
+        description: 'Remove and disconnect a configured MCP server by its name or ID.',
+        parameters: {
+          type: 'object',
+          properties: {
+            name_or_id: {
+              type: 'string',
+              description: 'The name or UUID of the MCP server to remove.',
+            },
+          },
+          required: ['name_or_id'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'call_mcp_tool',
+        description: 'Execute any tool provided by an active MCP server connected to PHANTOM.',
+        parameters: {
+          type: 'object',
+          properties: {
+            server_name: {
+              type: 'string',
+              description: 'The name of the connected MCP server.',
+            },
+            tool_name: {
+              type: 'string',
+              description: 'The name of the tool exposed by the MCP server to invoke.',
+            },
+            arguments: {
+              type: 'object',
+              description: 'Arguments required by the MCP tool.',
+            },
+          },
+          required: ['server_name', 'tool_name'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'manage_skills',
+        description: 'List, inspect, or manage custom AI skills registered in PHANTOM.',
+        parameters: {
+          type: 'object',
+          properties: {
+            action: {
+              type: 'string',
+              enum: ['list', 'info', 'delete'],
+              description: 'Action to perform: list all skills, get detailed info on a skill, or delete a skill.',
+            },
+            name: {
+              type: 'string',
+              description: 'The name of the skill (required for "info" and "delete").',
+            },
+          },
+          required: ['action'],
+        },
+      },
+    },
   ];
 }
