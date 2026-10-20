@@ -304,14 +304,15 @@ import { ChatSessions } from './chat-sessions.js';
         if (!replay && String(msg.result || '').includes('[SUDO_REQUIRED]')) {
           showSudoModal();
         }
+        const toolResult = { ...msg };
         if (['show_preview_window', 'show_code_demo', 'analyze_target_graph'].includes(msg.name)) {
           try {
             const resObj = typeof msg.result === 'string' ? JSON.parse(msg.result) : msg.result;
             if (resObj && resObj.html_content) {
               if (!replay) {
-              window.showPreview(resObj.html_content, resObj.title || 'Preview');
+                window.showPreview(resObj.html_content, resObj.title || 'Preview');
 
-              if (resObj.open_new_window) {
+                if (resObj.open_new_window) {
                 const previewSession = activeSession;
                 // Wait a tick for the UI to update, then click the popout button automatically
                 setTimeout(() => {
@@ -321,16 +322,17 @@ import { ChatSessions } from './chat-sessions.js';
 
               }
               // Keep transcript replay free of preview-window side effects.
-              msg.result = resObj.message || 'Success';
+              toolResult.result = resObj.message || 'Success';
             }
           } catch (e) {
             console.error(`Failed to parse ${msg.name} result:`, e);
           }
         }
-        Chat.addToolResult(msg);
+        Chat.addToolResult(toolResult, { replay });
         break;
 
       case 'response_end':
+        Chat.finalizeActivity?.(msg.cancelled ? 'cancelled' : 'completed');
         Chat.endAssistantMessage();
         break;
 
@@ -339,6 +341,7 @@ import { ChatSessions } from './chat-sessions.js';
         break;
 
       case 'error':
+        Chat.finalizeActivity?.('failed');
         Chat.addErrorMessage(msg.message);
         if (msg.terminal) Chat.endAssistantMessage();
         break;

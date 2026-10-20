@@ -118,4 +118,18 @@ describe('Conversation-scoped WebSocket requests', () => {
     expect(runs).toHaveLength(0);
     expect(ws.frames.at(-1)).toMatchObject({ type: 'error', requestId: 'one', terminal: true });
   });
+
+  it('emits a safe final message if a model handler resolves without content', async () => {
+    const { socket, runs } = fixture();
+    const ws = socket();
+    ws.chat('a', 'one');
+    runs[0].resolve('');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(ws.frames.find(frame => frame.type === 'chunk')).toMatchObject({
+      content: expect.stringMatching(/no usable final answer/i),
+    });
+    expect(ws.frames.at(-1)).toMatchObject({ type: 'response_end', requestId: 'one' });
+  });
 });

@@ -187,8 +187,38 @@ export function getToolDefinitions() {
     {
       type: 'function',
       function: {
+        name: 'generate_pdf',
+        description: 'Create a workspace-local PDF artifact from Markdown or plain text. The result includes a structured artifact path and byte count; paths outside the workspace are rejected.',
+        parameters: {
+          type: 'object',
+          properties: {
+            content: {
+              type: 'string',
+              description: 'Markdown or plain text content to place in the PDF.',
+            },
+            filename: {
+              type: 'string',
+              description: 'Workspace-relative output filename or path. The .pdf extension is added when omitted. Defaults to phantom-document.pdf.',
+              default: 'phantom-document.pdf',
+            },
+            output_path: {
+              type: 'string',
+              description: 'Optional workspace-relative output path. Use this instead of filename when a nested artifact path is needed.',
+            },
+            title: {
+              type: 'string',
+              description: 'Optional document title shown at the top of the PDF.',
+            },
+          },
+          required: ['content'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
         name: 'install_tool',
-        description: 'Install a security tool or package. Automatically detects the best installation method (apt/pacman/yum, pip, go install, git clone, etc.).',
+        description: 'Install a security tool or package with OS-aware package-manager detection. Uses validated identifiers, reproducible local npm installs (never global), and workspace-local git clones.',
         parameters: {
           type: 'object',
           properties: {
@@ -198,7 +228,7 @@ export function getToolDefinitions() {
             },
             method: {
               type: 'string',
-              enum: ['auto', 'apt', 'pacman', 'yum', 'pip', 'pipx', 'go', 'cargo', 'npm', 'git', 'snap'],
+              enum: ['auto', 'apt', 'dnf', 'pacman', 'yum', 'zypper', 'brew', 'port', 'winget', 'choco', 'scoop', 'pip', 'pipx', 'go', 'cargo', 'npm', 'git', 'snap'],
               description: 'Installation method. Use "auto" for automatic detection.',
               default: 'auto',
             },

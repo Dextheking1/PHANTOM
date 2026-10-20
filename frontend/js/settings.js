@@ -40,6 +40,19 @@ window.Settings = {
     });
 
     this.load();
+    this.loadConnectedTools();
+
+    document.getElementById('refresh-tools-btn')?.addEventListener('click', () => this.loadConnectedTools());
+    document.getElementById('show-add-tool-btn')?.addEventListener('click', () => {
+      const form = document.getElementById('custom-connector-form');
+      if (form) form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    });
+    document.getElementById('cancel-custom-tool-btn')?.addEventListener('click', () => {
+      const form = document.getElementById('custom-connector-form');
+      if (form) form.style.display = 'none';
+    });
+    document.getElementById('save-custom-tool-btn')?.addEventListener('click', () => this.addCustomTool());
+
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && this.isOpen) this.close();
     });
@@ -50,8 +63,119 @@ window.Settings = {
     if (input) input.type = input.type === 'password' ? 'text' : 'password';
   },
 
-  open() { this.panel?.classList.remove('hidden'); this.isOpen = true; },
+  open() {
+    this.panel?.classList.remove('hidden');
+    this.isOpen = true;
+    this.loadConnectedTools();
+  },
   close() { this.panel?.classList.add('hidden'); this.isOpen = false; },
+
+  async loadConnectedTools() {
+    const container = document.getElementById('connected-tools-list');
+    if (!container) return;
+    try {
+      const res = await fetch('/api/connected-tools');
+      const data = await res.json();
+      if (!data.success || !Array.isArray(data.tools)) throw new Error(data.error || 'Failed to load tools');
+
+      container.innerHTML = data.tools.map(tool => {
+        const isConnected = tool.connected;
+        const statusClass = isConnected ? 'online' : (tool.installed ? 'warning' : 'offline');
+        const statusText = isConnected ? 'Connected' : (tool.installed ? 'Installed' : 'Not installed');
+        const actionLabel = isConnected ? '✓ Active' : (tool.installed ? 'Connect' : 'Install & Connect');
+        const btnDisabled = isConnected ? 'disabled' : '';
+
+        return `
+          <div class="mcp-item" style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; margin-bottom: 8px;">
+            <div style="flex: 1; min-width: 0;">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span class="status-dot ${statusClass}" style="width: 8px; height: 8px; flex-shrink: 0;"></span>
+                <strong style="font-size: 12.5px; color: var(--text-primary);">${this.esc(tool.name)}</strong>
+                ${tool.version ? `<small style="font-size: 10px; color: var(--accent);">v${this.esc(tool.version)}</small>` : ''}
+              </div>
+              <p style="font-size: 11px; color: var(--text-muted); margin-top: 3px; line-height: 1.35;">${this.esc(tool.description)}</p>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <button type="button" class="btn btn-secondary btn-sm" ${btnDisabled} style="padding: 5px 9px; font-size: 11px;" onclick="Settings.connectTool('${tool.id}')">
+                ${actionLabel}
+              </button>
+              ${tool.isCustom ? `<button type="button" class="btn-icon-sm" style="color: var(--danger); font-size: 12px;" title="Delete connector" onclick="Settings.deleteCustomTool('${tool.id}')">✕</button>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+    } catch (err) {
+      container.innerHTML = `<p class="mcp-empty" style="color: var(--danger);">Failed to load connected tools: ${this.esc(err.message)}</p>`;
+    }
+  },
+
+  async connectTool(toolId) {
+    window.Toast?.show(`Connecting ${toolId}…`, 'info');
+    try {
+      const res = await fetch('/api/connected-tools/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: toolId, action: 'connect' })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Connection failed');
+      window.Toast?.show(data.message || `Connected ${toolId}`, 'success');
+      this.loadConnectedTools();
+    } catch (err) {
+      window.Toast?.show(err.message, 'error');
+    }
+  },
+
+  async addCustomTool() {
+    const name = document.getElementById('new-tool-name')?.value.trim();
+    const binary = document.getElementById('new-tool-binary')?.value.trim();
+    const installMethod = document.getElementById('new-tool-method')?.value;
+    const pkg = document.getElementById('new-tool-pkg')?.value.trim();
+
+    if (!name || !binary) {
+      window.Toast?.show('Name and Command/Binary are required', 'warning');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/connected-tools/custom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, binary, installMethod, pkg: pkg || binary })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to add connector');
+
+      window.Toast?.show(`Connector ${name} created`, 'success');
+      const form = document.getElementById('custom-connector-form');
+      if (form) form.style.display = 'none';
+      document.getElementById('new-tool-name').value = '';
+      document.getElementById('new-tool-binary').value = '';
+      document.getElementById('new-tool-pkg').value = '';
+      this.loadConnectedTools();
+    } catch (err) {
+      window.Toast?.show(err.message, 'error');
+    }
+  },
+
+  async deleteCustomTool(toolId) {
+    if (!confirm('Remove this custom connector?')) return;
+    try {
+      const res = await fetch(`/api/connected-tools/custom/${encodeURIComponent(toolId)}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to delete connector');
+      window.Toast?.show('Connector removed', 'success');
+      this.loadConnectedTools();
+    } catch (err) {
+      window.Toast?.show(err.message, 'error');
+    }
+  },
+
+  esc(str) {
+    if (!str) return '';
+    const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+    return String(str).replace(/[&<>"']/g, m => map[m]);
+  },
 
   async load() {
     try {

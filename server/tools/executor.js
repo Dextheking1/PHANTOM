@@ -1,7 +1,8 @@
 import { spawn, execSync } from 'child_process';
 import { existsSync } from 'fs';
-import { readFile, writeFile, mkdir, readdir, stat } from 'fs/promises';
-import { dirname, resolve, join, sep, delimiter } from 'path';
+import { readFile, writeFile, mkdir, readdir, stat, rename, unlink, realpath } from 'fs/promises';
+import { randomUUID } from 'node:crypto';
+import { dirname, resolve, join, sep, delimiter, basename, relative, isAbsolute } from 'path';
 import os from 'os';
 import { saveMemory, hybridSearchMemories, getMemoryStats, searchConversations, createConversation } from '../memory/store.js';
 import { getSetting } from '../memory/store.js';
@@ -29,6 +30,72 @@ export function isWindowsAdmin() {
 function escapeShellArg(arg) {
   if (arg === undefined || arg === null) return "''";
   return "'" + String(arg).replace(/'/g, "'\\''") + "'";
+}
+
+function isWithin(root, candidate) {
+  const relativePath = relative(resolve(root), resolve(candidate));
+  return relativePath === '' || (relativePath !== '..' && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath));
+}
+
+/**
+ * Resolve a file path relative to the configured workspace and reject both
+ * lexical traversal and symlinked paths that leave the workspace. Absolute
+ * paths remain supported for compatibility when they are already inside it.
+ */
+export async function resolveWorkspacePath(filePath, { forWrite = false } = {}) {
+  if (typeof filePath !== 'string' || !filePath.trim()) throw new Error('A file path is required.');
+
+  const configuredRoot = resolve(config.workspace);
+  const candidate = resolve(configuredRoot, filePath);
+  if (!isWithin(configuredRoot, candidate)) {
+    throw new Error(`Access denied. Path is outside the workspace (${configuredRoot})`);
+  }
+
+  if (forWrite) await mkdir(configuredRoot, { recursive: true });
+
+  const realRoot = await realpath(configuredRoot).catch(() => configuredRoot);
+  const existingPath = await realpath(candidate).catch(async error => {
+    if (error?.code !== 'ENOENT') throw error;
+    if (!forWrite) throw error;
+
+    // The target may not exist yet. Check the nearest existing parent so a
+    // symlinked directory cannot redirect a new write outside the workspace.
+    let parent = dirname(candidate);
+    while (isWithin(configuredRoot, parent)) {
+      try {
+        return await realpath(parent);
+      } catch (parentError) {
+        if (parentError?.code !== 'ENOENT') throw parentError;
+        const next = dirname(parent);
+        if (next === parent) break;
+        parent = next;
+      }
+    }
+    return candidate;
+  });
+
+  if (!isWithin(realRoot, existingPath)) {
+    throw new Error(`Access denied. Path is outside the workspace (${realRoot})`);
+  }
+  return candidate;
+}
+
+async function writeFileAtomically(filePath, content, encoding = 'utf8') {
+  const temporaryPath = `${filePath}.tmp-${process.pid}-${randomUUID()}`;
+  try {
+    await writeFile(temporaryPath, content, { encoding, flag: 'wx' });
+    await rename(temporaryPath, filePath);
+  } catch (error) {
+    await unlink(temporaryPath).catch(() => {});
+    throw error;
+  }
+}
+
+function validateSkillPart(value, label) {
+  if (typeof value !== 'string' || !value.trim() || value.length > 128 || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)) {
+    throw new Error(`Invalid ${label}: use letters, numbers, dots, underscores, or hyphens only.`);
+  }
+  return value;
 }
 
 /**
@@ -87,12 +154,13 @@ export function validateUrlForSSRF(urlString) {
  * Execute a tool by name with given arguments
  * @param {Function} onProgress - optional callback for live output streaming
  */
-export async function executeTool(name, args, onProgress) {
+export async function executeTool(name, args, onProgress, executionContext) {
   switch (name) {
     case 'execute_command': return await executeCommand(args, onProgress);
     case 'read_file': return await readFileContent(args);
     case 'write_file': return await writeFileContent(args);
-    case 'install_tool': return await installTool(args);
+    case 'generate_pdf': return await generatePdf(args);
+    case 'install_tool': return await installTool(args, onProgress);
     case 'web_request': return await webRequest(args);
     case 'search_web': return await searchWeb(args);
     case 'scrape_webpage': return await scrapeWebpage(args);
@@ -100,7 +168,7 @@ export async function executeTool(name, args, onProgress) {
     case 'recall_memory': return await recallMemoryTool(args);
     case 'get_memory_stats': return getMemoryStatsTool();
     case 'search_conversations': return searchConversationsTool(args);
-    case 'delegate_task': return await delegateTaskTool(args, onProgress);
+    case 'delegate_task': return await delegateTaskTool(args, onProgress, executionContext);
     case 'list_directory': return await listDirectory(args);
     case 'python_execute': return await pythonExecute(args);
     case 'edit_source_code': return await editSourceCode(args);
@@ -126,31 +194,160 @@ export async function executeTool(name, args, onProgress) {
  */
 async function writeSkill({ name, description, code, entry_point = 'script.py' }) {
   try {
-    const skillsDir = join(config.workspace, 'skills', name);
+    const skillName = validateSkillPart(name, 'skill name');
+    const entryPoint = validateSkillPart(entry_point, 'entry point');
+    if (typeof description !== 'string' || !description.trim()) throw new Error('Skill description is required.');
+    if (typeof code !== 'string') throw new Error('Skill code is required.');
+
+    const skillsDir = await resolveWorkspacePath(join('skills', skillName), { forWrite: true });
     await mkdir(skillsDir, { recursive: true });
+    await resolveWorkspacePath(join('skills', skillName, entryPoint), { forWrite: true });
 
     // Write the main script
-    await writeFile(join(skillsDir, entry_point), code, 'utf8');
+    await writeFileAtomically(join(skillsDir, entryPoint), code, 'utf8');
 
     // Make script executable if it's sh or py
-    try {
-      execSync(`chmod +x ${escapeShellArg(join(skillsDir, entry_point))}`);
-    } catch (err) {
-      console.error(`[writeSkill] Error setting permissions for ${name}:`, err.message);
+    if (/\.(?:sh|py)$/i.test(entryPoint)) {
+      try {
+        execSync(`chmod +x ${escapeShellArg(join(skillsDir, entryPoint))}`);
+      } catch (err) {
+        console.error(`[writeSkill] Error setting permissions for ${skillName}:`, err.message);
+      }
     }
 
     // Write the skill manifest
     const manifest = {
-      name,
-      description,
-      entry: entry_point
+      name: skillName,
+      description: description.trim(),
+      entry: entryPoint,
     };
-    await writeFile(join(skillsDir, 'skill.json'), JSON.stringify(manifest, null, 2), 'utf8');
+    await writeFileAtomically(join(skillsDir, 'skill.json'), JSON.stringify(manifest, null, 2), 'utf8');
 
-    return `Skill "${name}" created successfully at ${skillsDir}.`;
+    // The skill loader discovers skills from SKILL.md frontmatter. Keep the
+    // legacy JSON manifest too, but make the markdown file authoritative for
+    // discovery and progressive loading.
+    const yamlValue = value => String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/[\r\n]+/g, ' ').trim();
+    const language = /\.(?:js|mjs|cjs)$/i.test(entryPoint)
+      ? 'javascript'
+      : /\.py$/i.test(entryPoint) ? 'python' : /\.(?:sh|bash)$/i.test(entryPoint) ? 'bash' : 'text';
+    const implementation = language === 'javascript'
+      ? `\n## Implementation\n\n\`\`\`${language}\n${code.replace(/```/g, '~~~')}\n\`\`\`\n`
+      : `\n## Implementation\n\nThe executable source is stored in \`${entryPoint}\` and is loaded from the skill directory.\n`;
+    const skillMarkdown = `---\nname: "${yamlValue(skillName)}"\ndescription: "${yamlValue(description)}"\nentry: "${yamlValue(entryPoint)}"\ntrust_tier: 3\n---\n\n# ${skillName}\n\n${description.trim()}\n${implementation}`;
+    await writeFileAtomically(join(skillsDir, 'SKILL.md'), skillMarkdown, 'utf8');
+
+    return `Skill "${skillName}" created successfully at ${skillsDir}.`;
   } catch (err) {
     return `Error creating skill: ${err.message}`;
   }
+}
+
+function markdownToPlainText(markdown) {
+  return String(markdown)
+    .replace(/\r\n?/g, '\n')
+    .replace(/^```[^\n]*\n/gm, '')
+    .replace(/^```\s*$/gm, '')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '- ')
+    .replace(/[*_~`]/g, '')
+    .trim();
+}
+
+function wrapPdfLine(line, width = 96) {
+  const value = String(line || '');
+  if (value.length <= width) return [value];
+  const wrapped = [];
+  let remaining = value;
+  while (remaining.length > width) {
+    let splitAt = remaining.lastIndexOf(' ', width);
+    if (splitAt < 1) splitAt = width;
+    wrapped.push(remaining.slice(0, splitAt));
+    remaining = remaining.slice(splitAt).trimStart();
+  }
+  wrapped.push(remaining);
+  return wrapped;
+}
+
+function escapePdfText(value) {
+  return String(value)
+    .normalize('NFKD')
+    .replace(/[^\x20-\x7E]/g, '?')
+    .replace(/[\\()]/g, character => `\\${character}`);
+}
+
+function buildPdfBuffer(content, title) {
+  const plainText = markdownToPlainText(content);
+  const lines = [title || 'PHANTOM document', '', ...plainText.split('\n').flatMap(line => wrapPdfLine(line))];
+  const linesPerPage = 46;
+  const pages = [];
+  for (let index = 0; index < lines.length; index += linesPerPage) {
+    pages.push(lines.slice(index, index + linesPerPage));
+  }
+  if (pages.length === 0) pages.push(['PHANTOM document']);
+
+  const objects = new Map();
+  const pageObjectNumbers = pages.map((_, index) => 4 + (index * 2));
+  const contentObjectNumbers = pages.map((_, index) => 5 + (index * 2));
+  const objectCount = 3 + (pages.length * 2);
+
+  objects.set(1, '<< /Type /Catalog /Pages 2 0 R >>');
+  objects.set(2, `<< /Type /Pages /Kids [${pageObjectNumbers.map(number => `${number} 0 R`).join(' ')}] /Count ${pages.length} >>`);
+  objects.set(3, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+
+  pages.forEach((pageLines, pageIndex) => {
+    const commands = ['BT', '72 750 Td'];
+    pageLines.forEach((line, lineIndex) => {
+      commands.push(lineIndex === 0 ? '/F1 16 Tf' : '/F1 10 Tf');
+      if (lineIndex > 0) commands.push('0 -16 Td');
+      commands.push(`(${escapePdfText(line)}) Tj`);
+    });
+    commands.push('ET');
+    const stream = commands.join('\n') + '\n';
+    objects.set(pageObjectNumbers[pageIndex], `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentObjectNumbers[pageIndex]} 0 R >>`);
+    objects.set(contentObjectNumbers[pageIndex], `<< /Length ${Buffer.byteLength(stream, 'ascii')} >>\nstream\n${stream}endstream`);
+  });
+
+  let output = Buffer.from('%PDF-1.4\n', 'ascii');
+  const offsets = [0];
+  for (let objectNumber = 1; objectNumber <= objectCount; objectNumber += 1) {
+    offsets[objectNumber] = output.length;
+    const body = Buffer.from(`${objectNumber} 0 obj\n${objects.get(objectNumber)}\nendobj\n`, 'ascii');
+    output = Buffer.concat([output, body]);
+  }
+
+  const xrefOffset = output.length;
+  const xref = [`xref\n0 ${objectCount + 1}`, '0000000000 65535 f '];
+  for (let objectNumber = 1; objectNumber <= objectCount; objectNumber += 1) {
+    xref.push(`${String(offsets[objectNumber]).padStart(10, '0')} 00000 n `);
+  }
+  xref.push(`trailer\n<< /Size ${objectCount + 1} /Root 1 0 R >>`, `startxref\n${xrefOffset}`, '%%EOF\n');
+  return Buffer.concat([output, Buffer.from(`${xref.join('\n')}\n`, 'ascii')]);
+}
+
+async function generatePdf({ content, filename = 'phantom-document.pdf', output_path, title = 'PHANTOM document' } = {}) {
+  if (typeof content !== 'string' || !content.trim()) throw new Error('content is required and must not be empty.');
+  const requestedPath = output_path || filename;
+  if (typeof requestedPath !== 'string' || !requestedPath.trim()) throw new Error('filename or output_path is required.');
+  const pdfPath = requestedPath.toLowerCase().endsWith('.pdf') ? requestedPath : `${requestedPath}.pdf`;
+  const resolvedPath = await resolveWorkspacePath(pdfPath, { forWrite: true });
+
+  await mkdir(dirname(resolvedPath), { recursive: true });
+  await resolveWorkspacePath(pdfPath, { forWrite: true });
+  const pdf = buildPdfBuffer(content, title);
+  await writeFileAtomically(resolvedPath, pdf);
+
+  return JSON.stringify({
+    success: true,
+    message: `PDF generated successfully: ${resolvedPath}`,
+    artifact: {
+      type: 'pdf',
+      path: resolvedPath,
+      relativePath: relative(resolve(config.workspace), resolvedPath),
+      bytes: pdf.length,
+    },
+  });
 }
 
 /**
@@ -308,7 +505,7 @@ function getRandomUA() {
 /**
  * Execute a shell command with optional live output streaming
  */
-async function executeCommand({ command, timeout = 120, working_directory, use_sudo = false }, onProgress) {
+export async function executeCommand({ command, timeout = 120, working_directory, use_sudo = false }, onProgress) {
   return new Promise((resolvePromise) => {
     let cmd = command;
     const isWindows = process.platform === 'win32';
@@ -325,7 +522,7 @@ async function executeCommand({ command, timeout = 120, working_directory, use_s
         const escaped = sudoPass.replace(/'/g, "'\\''");
         cmd = `echo '${escaped}' | sudo -S -p '' ${cleanCmd} 2>&1`;
       } else {
-        return '[SUDO_REQUIRED] This operation needs elevated privileges. Enter your sudo password in the security access prompt, then retry the operation.';
+        return resolvePromise('[SUDO_REQUIRED] This operation needs elevated privileges. Enter your sudo password in the security access prompt, then retry the operation.');
       }
     }
 
@@ -406,11 +603,7 @@ async function executeCommand({ command, timeout = 120, working_directory, use_s
  */
 async function readFileContent({ path, max_lines = 500 }) {
   try {
-    const resolvedPath = resolve(path);
-    const safeRoot = resolve(config.workspace);
-    if (!resolvedPath.startsWith(safeRoot + sep) && resolvedPath !== safeRoot) {
-      return `Error: Access denied. Path is outside the workspace (${safeRoot})`;
-    }
+    const resolvedPath = await resolveWorkspacePath(path);
     const content = await readFile(resolvedPath, 'utf8');
     const lines = content.split('\n');
     if (lines.length > max_lines) {
@@ -427,17 +620,17 @@ async function readFileContent({ path, max_lines = 500 }) {
  */
 async function writeFileContent({ path: filePath, content, append = false }) {
   try {
-    const resolvedPath = resolve(filePath);
-    const safeRoot = resolve(config.workspace);
-    if (!resolvedPath.startsWith(safeRoot + sep) && resolvedPath !== safeRoot) {
-      return `Error: Access denied. Path is outside the workspace (${safeRoot})`;
-    }
+    if (typeof content !== 'string') return 'Error writing file: content must be a string.';
+    const resolvedPath = await resolveWorkspacePath(filePath, { forWrite: true });
     await mkdir(dirname(resolvedPath), { recursive: true });
+    // Re-check after creating parents in case a path component was replaced
+    // by a symlink between validation and the write.
+    await resolveWorkspacePath(filePath, { forWrite: true });
     if (append) {
       const existing = await readFile(resolvedPath, 'utf8').catch(() => '');
-      await writeFile(resolvedPath, existing + content, 'utf8');
+      await writeFileAtomically(resolvedPath, existing + content, 'utf8');
     } else {
-      await writeFile(resolvedPath, content, 'utf8');
+      await writeFileAtomically(resolvedPath, content, 'utf8');
     }
     return `File written successfully: ${resolvedPath}`;
   } catch (err) {
@@ -448,66 +641,161 @@ async function writeFileContent({ path: filePath, content, append = false }) {
 /**
  * Install a security tool
  */
-async function installTool({ name, method = 'auto', source }) {
-  // Detect package manager if auto
-  if (method === 'auto') {
-    method = detectPackageManager();
+const INSTALL_METHODS = new Set([
+  'auto', 'apt', 'dnf', 'yum', 'pacman', 'zypper', 'brew', 'winget',
+  'port', 'choco', 'scoop', 'pip', 'pipx', 'go', 'cargo', 'npm', 'git', 'snap',
+]);
+
+/**
+ * Detect only package managers that are actually present. Returning null is
+ * important: silently falling back to apt made installs unpredictable and
+ * produced confusing failures on macOS/Windows.
+ */
+export function detectPackageManager({ platform = process.platform, path = process.env.PATH || '' } = {}) {
+  if (!['win32', 'darwin', 'linux'].includes(platform)) return null;
+  const candidates = platform === 'win32'
+    ? ['winget', 'choco', 'scoop']
+    : platform === 'darwin'
+      ? ['brew', 'port']
+      : ['apt-get', 'dnf', 'yum', 'pacman', 'zypper', 'snap'];
+
+  for (const candidate of candidates) {
+    if (isExecutableOnPath(candidate, path, platform)) {
+      return candidate;
+    }
   }
-
-  const sudoPass = getSetting('sudo_password', '');
-  const sudoPrefix = sudoPass ? `echo '${sudoPass.replace(/'/g, "'\\''")}' | sudo -S` : 'sudo';
-
-  let cmd;
-  switch (method) {
-    case 'apt':
-      cmd = `${sudoPrefix} apt-get install -y ${name}`;
-      break;
-    case 'pacman':
-      cmd = `${sudoPrefix} pacman -S --noconfirm ${name}`;
-      break;
-    case 'yum':
-      cmd = `${sudoPrefix} yum install -y ${name}`;
-      break;
-    case 'pip':
-      cmd = `pip install ${name}`;
-      break;
-    case 'pipx':
-      cmd = `pipx install ${name}`;
-      break;
-    case 'go':
-      cmd = `go install ${source || name}@latest`;
-      break;
-    case 'cargo':
-      cmd = `cargo install ${name}`;
-      break;
-    case 'npm':
-      cmd = `${sudoPrefix} npm install -g ${name}`;
-      break;
-    case 'git':
-      const url = source || `https://github.com/${name}`;
-      const repoName = name.split('/').pop();
-      cmd = `cd /opt && ${sudoPrefix} git clone ${url} ${repoName} 2>/dev/null || echo "Already cloned"`;
-      break;
-    case 'snap':
-      cmd = `${sudoPrefix} snap install ${name}`;
-      break;
-    default:
-      return `Unknown installation method: ${method}`;
-  }
-
-  return await executeCommand({ command: cmd, timeout: 300 });
+  return null;
 }
 
-function detectPackageManager() {
-  const paths = (process.env.PATH || '').split(delimiter);
-  const findCmd = (cmd) => paths.some(p => existsSync(join(p, cmd)));
+function isExecutableOnPath(command, path, platform) {
+  const suffixes = platform === 'win32' ? ['', '.exe', '.cmd', '.bat'] : [''];
+  return path.split(delimiter).some(directory => suffixes.some(suffix => existsSync(join(directory, `${command}${suffix}`))));
+}
 
-  if (findCmd('apt-get')) return 'apt';
-  if (findCmd('pacman')) return 'pacman';
-  if (findCmd('yum')) return 'yum';
-  if (findCmd('dnf')) return 'yum';
+function validatePackageName(name, method) {
+  if (typeof name !== 'string' || !name.trim()) throw new Error('Tool name is required.');
+  const value = name.trim();
+  if (value.length > 200 || value.startsWith('-') || /[\0\r\n\t;&|`$<>"'\\]/.test(value)) {
+    throw new Error('Invalid tool name: use a package/repository identifier without shell characters or options.');
+  }
 
-  return 'apt'; // default
+  const patterns = {
+    npm: /^(?:@[A-Za-z0-9._-]+\/)?[A-Za-z0-9._-]+(?:@[A-Za-z0-9*^~<>=.-]+)?$/,
+    pip: /^[A-Za-z0-9][A-Za-z0-9._-]*(?:\[[A-Za-z0-9_,.-]+\])?(?:===?|!=|~=|>=|<=|>|<)[A-Za-z0-9.*+!<>=~,-]+$/,
+    pipx: /^[A-Za-z0-9][A-Za-z0-9._-]*(?:@[A-Za-z0-9.*+!-]+)?$/,
+    go: /^[A-Za-z0-9][A-Za-z0-9._~/-]+@v?[A-Za-z0-9.+-]+$/,
+    cargo: /^[A-Za-z0-9][A-Za-z0-9_-]*(?:@[A-Za-z0-9.+-]+)?$/,
+    git: /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/,
+  };
+  const pattern = patterns[method];
+  if (pattern && !pattern.test(value)) {
+    const requirement = method === 'go' ? 'a module and pinned @version' : method === 'git' ? 'an owner/repository name' : 'a valid package identifier';
+    throw new Error(`Invalid ${method} tool name: expected ${requirement}.`);
+  }
+  if (!pattern && !/^[A-Za-z0-9][A-Za-z0-9+_.:@=~^/-]*$/.test(value)) {
+    throw new Error('Invalid tool name: use a package identifier without shell characters.');
+  }
+  return value;
+}
+
+function validateSource(source, method) {
+  if (source === undefined || source === null || source === '') return undefined;
+  if (typeof source !== 'string' || source.length > 2048 || /[\0\r\n\t;&|`$<>"'\\]/.test(source)) {
+    throw new Error('Invalid source: provide an HTTPS URL without credentials or shell characters.');
+  }
+  if (method !== 'git') {
+    throw new Error(`source is only supported for git installs (received method "${method}").`);
+  }
+  let parsed;
+  try {
+    parsed = validateUrlForSSRF(source);
+  } catch (error) {
+    throw new Error(`Invalid git source: ${error.message}`);
+  }
+  if (parsed.protocol !== 'https:' || parsed.username || parsed.password) {
+    throw new Error('Invalid git source: use an HTTPS URL without embedded credentials.');
+  }
+  const host = parsed.hostname.toLowerCase();
+  const privateIpv4 = /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(host);
+  if (privateIpv4 || host.endsWith('.local') || host.endsWith('.internal')) {
+    throw new Error('Invalid git source: private and local hosts are not allowed.');
+  }
+  return parsed.toString();
+}
+
+/** Build a validated, platform-aware install plan without executing it. */
+export function buildInstallPlan({ name, method = 'auto', source, platform = process.platform, path = process.env.PATH || '', workspace = config.workspace } = {}) {
+  if (!INSTALL_METHODS.has(method)) {
+    throw new Error(`Unknown installation method "${method}". Supported methods: ${Array.from(INSTALL_METHODS).join(', ')}.`);
+  }
+
+  let selectedMethod = method;
+  if (selectedMethod === 'auto') {
+    selectedMethod = detectPackageManager({ platform, path });
+    if (!selectedMethod) {
+      throw new Error(`No supported package manager was detected for ${platform}. Install one or choose pip, pipx, go, cargo, npm, or git explicitly.`);
+    }
+  }
+
+  const platformMethods = {
+    win32: new Set(['winget', 'choco', 'scoop', 'pip', 'pipx', 'go', 'cargo', 'npm', 'git']),
+    darwin: new Set(['brew', 'port', 'pip', 'pipx', 'go', 'cargo', 'npm', 'git']),
+    linux: new Set(['apt', 'dnf', 'yum', 'pacman', 'zypper', 'snap', 'pip', 'pipx', 'go', 'cargo', 'npm', 'git']),
+  };
+  if (!platformMethods[platform]) {
+    throw new Error(`Unsupported operating system "${platform}". Choose a supported Linux, macOS, or Windows environment.`);
+  }
+  if (!platformMethods[platform].has(selectedMethod)) {
+    throw new Error(`Installation method "${selectedMethod}" is not available on ${platform}.`);
+  }
+
+  const safeName = validatePackageName(name, selectedMethod);
+  const safeSource = validateSource(source, selectedMethod);
+  const toolsRoot = join(resolve(workspace), '.phantom-tools');
+  const packageRoot = join(toolsRoot, 'npm');
+  const useSudo = ['apt', 'dnf', 'yum', 'pacman', 'zypper', 'snap'].includes(selectedMethod);
+  let command;
+  let workingDirectory = resolve(workspace);
+
+  switch (selectedMethod) {
+    case 'apt': command = `apt-get install -y -- ${escapeShellArg(safeName)}`; break;
+    case 'dnf': command = `dnf install -y -- ${escapeShellArg(safeName)}`; break;
+    case 'yum': command = `yum install -y -- ${escapeShellArg(safeName)}`; break;
+    case 'pacman': command = `pacman -S --noconfirm -- ${escapeShellArg(safeName)}`; break;
+    case 'zypper': command = `zypper --non-interactive install -- ${escapeShellArg(safeName)}`; break;
+    case 'snap': command = `snap install ${escapeShellArg(safeName)}`; break;
+    case 'brew': command = `brew install ${escapeShellArg(safeName)}`; break;
+    case 'port': command = `port install ${escapeShellArg(safeName)}`; break;
+    case 'winget': command = `winget install --exact --accept-source-agreements --accept-package-agreements --id ${escapeShellArg(safeName)}`; break;
+    case 'choco': command = `choco install --yes --no-progress ${escapeShellArg(safeName)}`; break;
+    case 'scoop': command = `scoop install ${escapeShellArg(safeName)}`; break;
+    case 'pip': command = `${platform === 'win32' ? 'py -m pip' : 'python3 -m pip'} install --user --disable-pip-version-check --no-input ${escapeShellArg(safeName)}`; break;
+    case 'pipx': command = `pipx install ${escapeShellArg(safeName)}`; break;
+    case 'go': command = `go install ${escapeShellArg(safeName)}`; break;
+    case 'cargo': command = `cargo install ${escapeShellArg(safeName.includes('@') ? safeName.split('@')[0] : safeName)}${safeName.includes('@') ? ` --version ${escapeShellArg(safeName.split('@').slice(1).join('@'))}` : ''}`; break;
+    case 'npm': command = `npm install --prefix ${escapeShellArg(packageRoot)} --no-save --package-lock=false --ignore-scripts ${escapeShellArg(safeName)}`; break;
+    case 'git': {
+      const repoName = basename(safeName);
+      const repoPath = join(toolsRoot, repoName);
+      command = `git clone --depth 1 ${escapeShellArg(safeSource || `https://github.com/${safeName}.git`)} ${escapeShellArg(repoPath)}`;
+      break;
+    }
+    default: throw new Error(`Unsupported installation method "${selectedMethod}".`);
+  }
+
+  return { method: selectedMethod, platform, command, workingDirectory, useSudo, toolsRoot, packageRoot };
+}
+
+async function installTool(args = {}, onProgress) {
+  try {
+    const plan = buildInstallPlan(args);
+    await mkdir(plan.toolsRoot, { recursive: true });
+    if (onProgress) onProgress(`Installing ${args.name} with ${plan.method} in ${plan.toolsRoot}`);
+    const result = await executeCommand({ command: plan.command, timeout: 300, working_directory: plan.workingDirectory, use_sudo: plan.useSudo }, onProgress);
+    return `Install method: ${plan.method}\nInstall location: ${plan.method === 'npm' ? plan.packageRoot : plan.toolsRoot}\n${result}`;
+  } catch (error) {
+    return `Install not started: ${error.message}\nAction: verify the package name/source and install the detected package manager, or choose an explicit supported method.`;
+  }
 }
 
 /**
@@ -902,11 +1190,7 @@ function getMemoryStatsTool() {
  */
 async function listDirectory({ path: dirPath, show_hidden = false }) {
   try {
-    const resolvedPath = resolve(dirPath);
-    const safeRoot = resolve(config.workspace);
-    if (!resolvedPath.startsWith(safeRoot + sep) && resolvedPath !== safeRoot) {
-      return `Error: Access denied. Path is outside the workspace (${safeRoot})`;
-    }
+    const resolvedPath = await resolveWorkspacePath(dirPath);
     const entries = await readdir(resolvedPath, { withFileTypes: true });
 
     // ⚡ Bolt: Fetch file stats in parallel instead of sequentially
@@ -1061,37 +1345,99 @@ function searchConversationsTool({ query }) {
 /**
  * Delegate task to a subagent
  */
-async function delegateTaskTool({ task_description }, onProgress) {
+const delegationState = {
+  active: 0,
+};
+
+export function getDelegationState() {
+  return { ...delegationState };
+}
+
+async function delegateTaskTool({ task_description }, onProgress, executionContext = {}) {
+  let slotAcquired = false;
+  let timeoutHandle;
   try {
+    if (typeof task_description !== 'string' || !task_description.trim()) {
+      return 'Delegation not started: task_description is required.';
+    }
+
+    const limits = config.limits || {};
+    const depth = Number.isInteger(executionContext.delegationDepth) ? executionContext.delegationDepth : 0;
+    const configuredDepth = Number(limits.maxDelegationDepth);
+    const maxDepth = Number.isFinite(configuredDepth) ? Math.max(0, Math.floor(configuredDepth)) : 2;
+    if (depth >= maxDepth) {
+      return `Delegation not started: maximum delegation depth (${maxDepth}) reached. Complete this task in the current agent or return a partial result.`;
+    }
+
+    const configuredConcurrency = Number(limits.maxDelegationConcurrency);
+    const maxConcurrency = Number.isFinite(configuredConcurrency) ? Math.max(1, Math.floor(configuredConcurrency)) : 2;
+    if (delegationState.active >= maxConcurrency) {
+      return `Delegation not started: concurrency limit (${maxConcurrency}) reached. Retry after an active subagent finishes.`;
+    }
+
+    const maxTaskLength = 20000;
+    if (task_description.length > maxTaskLength) {
+      return `Delegation not started: task_description exceeds ${maxTaskLength} characters. Ask the subagent to focus on a smaller scope.`;
+    }
+
+    delegationState.active += 1;
+    slotAcquired = true;
     if (onProgress) onProgress(`Spawning subagent for task: ${task_description.substring(0, 50)}...`);
 
     // Dynamically import processMessage to avoid circular dependencies
     const { processMessage } = await import('../ai/llm-client.js');
 
     // Create an isolated conversation for the subagent
+    // The subagent gets a fresh conversation and explicitly opts out of shared
+    // memory. This prevents unrelated sessions from leaking into its context.
     const subConv = createConversation('Subagent: ' + task_description.substring(0, 30));
 
     // Define an abort signal (optional)
     const ac = new AbortController();
+    const configuredTimeout = Number(limits.delegationTimeoutMs);
+    const timeoutMs = Number.isFinite(configuredTimeout) ? Math.max(1000, Math.floor(configuredTimeout)) : 120000;
+    timeoutHandle = setTimeout(() => ac.abort(), timeoutMs);
+    timeoutHandle.unref?.();
 
     // Run the subagent
     const result = await processMessage(
       subConv.id,
       task_description,
-      null, // sessionContext
+      {
+        includeSharedMemory: false,
+        parentConversationId: executionContext.rootConversationId || null,
+        prompt: 'You are an isolated subagent. Work only from this task and your own tool results; do not infer or import context from other conversations.',
+      },
       () => {}, // ignore chunking for now
       (tc) => { if (onProgress) onProgress(`[Subagent] Using tool: ${tc.name}`); },
       () => {},
       (err) => { if (onProgress) onProgress(`[Subagent Error] ${err}`); },
       () => {},
       ac.signal,
-      (tp) => { if (onProgress) onProgress(`[Subagent Tool] ${tp.name}: ${tp.text}`); }
+      (tp) => { if (onProgress) onProgress(`[Subagent Tool] ${tp.name}: ${tp.text}`); },
+      'delegate',
+      {
+        rootConversationId: executionContext.rootConversationId || subConv.id,
+        delegationDepth: depth + 1,
+      }
     );
 
-    return `Subagent completed task. Result:\n\n${result}`;
+    const conciseResult = compactSubagentResult(result, limits.maxDelegationResultChars ?? 12000);
+    return `Subagent completed task (isolated conversation ${subConv.id}). Result:\n\n${conciseResult}`;
   } catch (error) {
     return `Error delegating task: ${error.message}`;
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+    if (slotAcquired && delegationState.active > 0) delegationState.active -= 1;
   }
+}
+
+function compactSubagentResult(result, maxChars) {
+  const text = String(result ?? '').trim();
+  const limit = Math.max(1000, Number(maxChars) || 12000);
+  if (text.length <= limit) return text || 'The subagent returned no text.';
+  const tailLength = Math.min(1200, Math.floor(limit / 4));
+  return `${text.slice(0, limit - tailLength - 40)}\n… [subagent result truncated] …\n${text.slice(-tailLength)}`;
 }
 
 async function getSystemCapabilitiesTool() {

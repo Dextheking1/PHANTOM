@@ -31,8 +31,13 @@ const config = {
   },
   limits: {
     maxConcurrentChats: parseInt(process.env.MAX_CONCURRENT_CHATS || '4', 10),
+    llmRequestTimeoutMs: parseInt(process.env.LLM_REQUEST_TIMEOUT_MS || '120000', 10),
     maxToolIterations: parseInt(process.env.MAX_TOOL_ITERATIONS || '12', 10),
-    maxWebSocketMessageBytes: parseInt(process.env.MAX_WS_MESSAGE_BYTES || '262144', 10)
+    maxWebSocketMessageBytes: parseInt(process.env.MAX_WS_MESSAGE_BYTES || '262144', 10),
+    maxDelegationDepth: parseInt(process.env.MAX_DELEGATION_DEPTH || '2', 10),
+    maxDelegationConcurrency: parseInt(process.env.MAX_DELEGATION_CONCURRENCY || '2', 10),
+    delegationTimeoutMs: parseInt(process.env.DELEGATION_TIMEOUT_MS || '120000', 10),
+    maxDelegationResultChars: parseInt(process.env.MAX_DELEGATION_RESULT_CHARS || '12000', 10)
   }
 };
 
@@ -91,6 +96,10 @@ export function loadPersistedSettings(getSetting) {
   if (temperature !== null) config.api.temperature = Number(temperature);
   if (maxTokens !== null) config.api.maxTokens = Number(maxTokens);
   if (systemPrompt !== null) config.systemPrompt = systemPrompt;
+  const reaEnabled = getSetting('rea_enabled', null);
+  if (reaEnabled === 'true') {
+    process.env.REA_ENABLE_TOOL_CALLS = 'true';
+  }
   if (workspace) {
     config.workspace = workspace;
     try {

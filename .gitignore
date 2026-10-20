@@ -40,3 +40,5 @@ npm-debug.log*
 
 # Backups created by PHANTOM self-edit
 *.bak
+
+.opencode/

@@ -61,4 +61,11 @@ describe('Chat renderer lifecycle', () => {
     chat.endAssistantMessage();
     expect(frames.size).toBe(0);
   });
+
+  it('shows only a safe work status and never renders raw model reasoning', () => {
+    chat.addThinkingChunk('The user secret and internal chain-of-thought must stay hidden.');
+    expect(chat.thinkingContent).toContain('PHANTOM is working');
+    expect(chat.thinkingContent).not.toContain('internal chain-of-thought');
+    expect(chat.thinkingContent).not.toContain('user secret');
+  });
 });

@@ -64,14 +64,149 @@
 
     <div id="sudo-modal" class="sudo-modal" style="display:none;"><div class="sudo-modal-backdrop"></div><div class="sudo-modal-content"><div class="sudo-modal-icon">🔑</div><h2 class="sudo-modal-title">Sudo access</h2><p class="sudo-modal-desc">Provide temporary elevation only when required for an authorised operation.</p><div class="sudo-modal-input-wrap"><input type="password" id="sudo-modal-password" aria-label="Sudo password" placeholder="Sudo password" autocomplete="off"><button type="button" id="sudo-modal-toggle-eye" class="btn-icon-sm" aria-label="Toggle password visibility">◉</button></div><div id="sudo-modal-feedback" class="sudo-modal-feedback"></div><div class="sudo-modal-actions"><button type="button" id="sudo-modal-validate" class="btn btn-primary">Validate</button><button type="button" id="sudo-modal-skip" class="btn btn-secondary">Skip</button></div></div></div>
 
-    <div id="settings-panel" class="settings-panel hidden"><div class="settings-overlay" id="settings-overlay"></div><div class="settings-drawer"><div class="settings-header"><h2>Settings</h2><button type="button" id="settings-close" class="btn-icon" aria-label="Close settings">×</button></div><div class="settings-body">
-      <section class="settings-section"><h3>Provider</h3><div class="form-group"><label for="setting-base-url">Base URL</label><input type="url" id="setting-base-url" placeholder="https://api.openai.com/v1"><small>Any OpenAI-compatible endpoint.</small></div><div class="form-group"><label for="setting-api-key">API key</label><div class="input-with-toggle"><input type="password" id="setting-api-key" placeholder="sk-…"><button type="button" id="toggle-api-key" class="btn-icon-sm" aria-label="Toggle API key visibility">◉</button></div></div><div class="form-group"><label for="setting-model">Model ID</label><input type="text" id="setting-model" placeholder="gpt-4o" list="model-suggestions"><datalist id="model-suggestions"><option value="gpt-4o"><option value="gpt-4o-mini"><option value="deepseek-chat"><option value="meta/llama-3.3-70b-instruct"></datalist></div><div class="form-row"><div class="form-group"><label for="setting-temperature">Temperature</label><input type="range" id="setting-temperature" min="0" max="2" step="0.1" value="0.7"><span id="temperature-value">0.7</span></div><div class="form-group"><label for="setting-max-tokens">Max tokens</label><input type="number" id="setting-max-tokens" value="4096" min="256" max="128000"><label class="auto-token-toggle"><input type="checkbox" id="setting-auto-tokens"> Auto-size for model</label></div></div><div class="form-actions"><button type="button" id="test-connection" class="btn btn-secondary">Test connection</button><span id="test-result" class="test-result"></span></div></section>
-      <section class="settings-section"><h3>Workspace</h3><div class="form-group"><label for="setting-workspace">Directory</label><input type="text" id="setting-workspace" placeholder="/home/user/phantom-workspace"><small>Working directory for reports, scripts, and file operations.</small></div></section>
-      <section class="settings-section"><h3>System access</h3><div class="form-group"><label for="setting-sudo-password">Sudo password</label><div class="input-with-toggle"><input type="password" id="setting-sudo-password" placeholder="Only when elevation is needed"><button type="button" id="toggle-sudo-pass" class="btn-icon-sm" aria-label="Toggle sudo password visibility">◉</button></div><small>Use only on a trusted local installation.</small></div></section>
-      <section class="settings-section"><h3>Custom behaviour</h3><div class="form-group"><label for="setting-system-prompt">System prompt</label><textarea id="setting-system-prompt" rows="6" placeholder="Leave empty to use the default."></textarea><button type="button" id="reset-system-prompt" class="btn btn-secondary btn-sm">Reset</button></div></section>
-      <section class="settings-section"><h3>MCP servers</h3><div id="mcp-server-list" class="mcp-list"><p class="mcp-empty">Manage servers from the Management panel.</p></div><button type="button" id="add-mcp-btn" class="btn btn-secondary btn-sm">Open management</button></section>
-      <div class="settings-footer"><button type="button" id="save-settings" class="btn btn-primary">Save Settings</button></div>
-    </div></div></div>
+    <div id="settings-panel" class="settings-panel hidden">
+      <div class="settings-overlay" id="settings-overlay"></div>
+      <div class="settings-drawer">
+        <div class="settings-header">
+          <h2>Settings</h2>
+          <button type="button" id="settings-close" class="btn-icon" aria-label="Close settings">×</button>
+        </div>
+        <div class="settings-body">
+          <section class="settings-section">
+            <h3>Provider</h3>
+            <div class="form-group">
+              <label for="setting-base-url">Base URL</label>
+              <input type="url" id="setting-base-url" placeholder="https://api.openai.com/v1">
+              <small>Any OpenAI-compatible endpoint.</small>
+            </div>
+            <div class="form-group">
+              <label for="setting-api-key">API key</label>
+              <div class="input-with-toggle">
+                <input type="password" id="setting-api-key" placeholder="sk-…">
+                <button type="button" id="toggle-api-key" class="btn-icon-sm" aria-label="Toggle API key visibility">◉</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="setting-model">Model ID</label>
+              <input type="text" id="setting-model" placeholder="gpt-4o" list="model-suggestions">
+              <datalist id="model-suggestions">
+                <option value="gpt-4o">
+                <option value="gpt-4o-mini">
+                <option value="deepseek-chat">
+                <option value="meta/llama-3.3-70b-instruct">
+              </datalist>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="setting-temperature">Temperature</label>
+                <input type="range" id="setting-temperature" min="0" max="2" step="0.1" value="0.7">
+                <span id="temperature-value">0.7</span>
+              </div>
+              <div class="form-group">
+                <label for="setting-max-tokens">Max tokens</label>
+                <input type="number" id="setting-max-tokens" value="4096" min="256" max="128000">
+                <label class="auto-token-toggle">
+                  <input type="checkbox" id="setting-auto-tokens"> Auto-size for model
+                </label>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="button" id="test-connection" class="btn btn-secondary btn-sm">Test connection</button>
+              <span id="test-result" class="test-result"></span>
+            </div>
+          </section>
+
+          <section class="settings-section">
+            <h3>Workspace</h3>
+            <div class="form-group">
+              <label for="setting-workspace">Directory</label>
+              <input type="text" id="setting-workspace" placeholder="/home/user/phantom-workspace">
+              <small>Working directory for reports, scripts, and file operations.</small>
+            </div>
+          </section>
+
+          <section class="settings-section">
+            <h3>System access</h3>
+            <div class="form-group">
+              <label for="setting-sudo-password">Sudo password</label>
+              <div class="input-with-toggle">
+                <input type="password" id="setting-sudo-password" placeholder="Only when elevation is needed">
+                <button type="button" id="toggle-sudo-pass" class="btn-icon-sm" aria-label="Toggle sudo password visibility">◉</button>
+              </div>
+              <small>Use only on a trusted local installation.</small>
+            </div>
+          </section>
+
+          <section class="settings-section">
+            <h3>Custom behaviour</h3>
+            <div class="form-group">
+              <label for="setting-system-prompt">System prompt</label>
+              <textarea id="setting-system-prompt" rows="5" placeholder="Leave empty to use the default."></textarea>
+              <div style="margin-top: 8px; display: flex; justify-content: flex-end;">
+                <button type="button" id="reset-system-prompt" class="btn btn-secondary btn-sm">Reset</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-section">
+            <h3>Connected Tools &amp; REA</h3>
+            <p style="font-size: 11.5px; color: var(--text-muted); margin-bottom: 12px; line-height: 1.4;">
+              Auto-discover, install, and connect reverse-engineering, scanners, and custom MCP connectors.
+            </p>
+            <div id="connected-tools-list" class="connected-tools-list">
+              <p class="mcp-empty">Loading connected tools…</p>
+            </div>
+
+            <div id="custom-connector-form" class="custom-connector-form" style="display: none; margin-top: 12px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-sm);">
+              <h4 style="font-size: 12px; color: var(--text-primary); margin-bottom: 8px;">Add Custom Tool Connector</h4>
+              <div class="form-group" style="margin-bottom: 8px;">
+                <label for="new-tool-name" style="font-size: 11px;">Tool Name</label>
+                <input type="text" id="new-tool-name" placeholder="e.g. Wireshark, Burp, Gobuster">
+              </div>
+              <div class="form-group" style="margin-bottom: 8px;">
+                <label for="new-tool-binary" style="font-size: 11px;">Command / Binary</label>
+                <input type="text" id="new-tool-binary" placeholder="e.g. tshark, gobuster">
+              </div>
+              <div class="form-row" style="gap: 8px; margin-bottom: 8px;">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="new-tool-method" style="font-size: 11px;">Method</label>
+                  <select id="new-tool-method" style="width: 100%; padding: 8px; background: var(--bg-surface); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: var(--radius-sm); font-size: 12px;">
+                    <option value="apt">APT (Linux)</option>
+                    <option value="go">Go install</option>
+                    <option value="pip">Python Pip</option>
+                    <option value="npm">NPM global</option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="new-tool-pkg" style="font-size: 11px;">Package Name</label>
+                  <input type="text" id="new-tool-pkg" placeholder="e.g. tshark">
+                </div>
+              </div>
+              <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px;">
+                <button type="button" id="cancel-custom-tool-btn" class="btn btn-secondary btn-sm">Cancel</button>
+                <button type="button" id="save-custom-tool-btn" class="btn btn-primary btn-sm">Add Connector</button>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 8px; margin-top: 10px;">
+              <button type="button" id="show-add-tool-btn" class="btn btn-secondary btn-sm">＋ Add custom connector</button>
+              <button type="button" id="refresh-tools-btn" class="btn btn-secondary btn-sm">↻ Refresh status</button>
+            </div>
+          </section>
+
+          <section class="settings-section">
+            <h3>MCP servers</h3>
+            <div id="mcp-server-list" class="mcp-list">
+              <p class="mcp-empty">Manage servers from the Management panel.</p>
+            </div>
+            <button type="button" id="add-mcp-btn" class="btn btn-secondary btn-sm">Open management</button>
+          </section>
+        </div>
+        <div class="settings-footer">
+          <button type="button" id="save-settings" class="btn btn-primary">Save Settings</button>
+        </div>
+      </div>
+    </div>
 
     <div id="update-progress-modal" class="ai-doctor-modal hidden"><div class="ai-doctor-overlay"></div><div class="ai-doctor-dialog"><div class="ai-doctor-header"><div><h2 class="ai-doctor-title">Updating PHANTOM</h2><p class="ai-doctor-subtitle">Applying the latest verified repository state…</p></div></div><pre id="update-log" class="doctor-config-screen"></pre></div></div>
     <div id="preview-panel" class="preview-panel hidden"><div class="preview-header"><h2 id="preview-title" class="preview-title">Preview</h2><div class="preview-actions"><button type="button" id="preview-popout-btn" class="btn-icon" aria-label="Open preview in new window">⧉</button><button type="button" id="preview-refresh-btn" class="btn-icon" aria-label="Refresh preview">↻</button><button type="button" id="preview-close-btn" class="btn-icon" aria-label="Close preview">×</button></div></div><div class="preview-body"><iframe id="preview-iframe" sandbox="allow-scripts allow-forms allow-popups" title="Preview"></iframe></div></div>

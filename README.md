@@ -51,6 +51,21 @@ Tool loops have a configurable iteration limit. Stop requests cancel active
 generation, but do **not** guarantee immediate termination of every external
 tool or child process.
 
+Provider streaming uses a bounded `LLM_REQUEST_TIMEOUT_MS` (120 seconds by
+default) and retries transient network timeouts twice with backoff. A failed
+stream no longer immediately ends with `read ETIMEDOUT` when the provider can
+recover. The UI shows a safe work-status indicator rather than exposing raw
+model reasoning; verified answers and tool results remain visible.
+
+Tool execution is bounded and OS-aware. `install_tool` detects the available
+package manager instead of assuming Debian, validates package/source arguments,
+avoids global npm installs, and keeps git/npm artifacts under
+`workspace/.phantom-tools`. Delegated subagents have depth, concurrency,
+timeout, and result-size limits controlled by the `MAX_DELEGATION_*` settings in
+`.env.example`. When a tool loop reaches its limit, PHANTOM performs one final
+no-tool synthesis pass and returns verified findings, partial progress, and a
+next step instead of ending with only a limit warning.
+
 ### Independent chat sessions
 
 Use **New chat**, send a message, and select another conversation in the sidebar

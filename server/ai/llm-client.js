@@ -8,6 +8,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 let openaiClient = null;
 const providerSlots = new WeakMap();
+const INVALID_TOOL_NAME = '__invalid_tool_call__';
+export const EMPTY_FINAL_RESPONSE = '[PHANTOM] No usable final answer was returned. No further action was taken.';
 
 async function paceProvider(client, api, signal) {
   if (!(api.baseUrl || '').includes('nvidia') && !(api.apiKey || '').startsWith('nvapi-')) return;
@@ -16,26 +18,155 @@ async function paceProvider(client, api, signal) {
   providerSlots.set(client, slot + 1500);
   if (slot > now) await delay(slot - now, undefined, { signal });
 }
-function sanitizeToolCalls(toolCalls) {
-  if (!toolCalls || !Array.isArray(toolCalls)) return toolCalls;
-  return toolCalls.map(tc => {
-    if (!tc || !tc.function) return tc;
-    let sanitizedArgs = tc.function.arguments;
-    if (typeof sanitizedArgs === 'string') {
-      try {
-        JSON.parse(sanitizedArgs);
-      } catch (e) {
-        sanitizedArgs = JSON.stringify({ _raw_invalid: sanitizedArgs });
-      }
+export function parseToolArguments(rawArguments) {
+  if (rawArguments === undefined || rawArguments === null || (typeof rawArguments === 'string' && !rawArguments.trim())) {
+    return { ok: false, code: 'invalid_tool_arguments', error: 'Tool arguments were empty.', args: {} };
+  }
+
+  if (typeof rawArguments === 'object' && !Array.isArray(rawArguments)) {
+    return { ok: true, args: rawArguments };
+  }
+
+  if (typeof rawArguments !== 'string') {
+    return { ok: false, code: 'invalid_tool_arguments', error: 'Tool arguments must be a JSON object.', args: {} };
+  }
+
+  try {
+    const parsed = JSON.parse(rawArguments);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { ok: false, code: 'invalid_tool_arguments', error: 'Tool arguments must be a JSON object.', args: {} };
     }
-    return {
-      ...tc,
-      function: {
-        ...tc.function,
-        arguments: sanitizedArgs
-      }
+    return { ok: true, args: parsed };
+  } catch {
+    return { ok: false, code: 'invalid_tool_arguments', error: 'Tool arguments were not valid JSON.', args: {} };
+  }
+}
+
+function normalizeToolCall(rawToolCall, index, iteration = 0, usedIds = new Set()) {
+  const source = rawToolCall && typeof rawToolCall === 'object' ? rawToolCall : {};
+  const functionPart = source.function && typeof source.function === 'object' ? source.function : {};
+  let id = typeof source.id === 'string' && source.id.trim()
+    ? source.id.trim()
+    : `tool-call-${iteration + 1}-${index + 1}`;
+  while (usedIds.has(id)) id = `${id}-${index + 1}`;
+  usedIds.add(id);
+
+  const name = typeof functionPart.name === 'string' && functionPart.name.trim()
+    ? functionPart.name.trim()
+    : INVALID_TOOL_NAME;
+  const parsedArguments = parseToolArguments(functionPart.arguments);
+  const assistantArguments = parsedArguments.ok
+    ? JSON.stringify(parsedArguments.args)
+    : JSON.stringify({ _invalid_tool_call: true, error: parsedArguments.error });
+
+  return {
+    id,
+    name,
+    args: parsedArguments.args,
+    argumentError: parsedArguments.ok ? null : parsedArguments,
+    valid: name !== INVALID_TOOL_NAME && parsedArguments.ok,
+    assistantCall: {
+      id,
+      type: 'function',
+      function: { name, arguments: assistantArguments },
+    },
+  };
+}
+
+function normalizeToolCalls(toolCalls, iteration = 0) {
+  if (!Array.isArray(toolCalls)) return [];
+  const usedIds = new Set();
+  return toolCalls
+    .filter(call => call !== undefined)
+    .map((call, index) => normalizeToolCall(call, index, iteration, usedIds));
+}
+
+function sanitizeToolCalls(toolCalls) {
+  return normalizeToolCalls(toolCalls).map(call => call.assistantCall);
+}
+
+function appendToolCallDelta(toolCalls, rawDelta) {
+  const delta = rawDelta && typeof rawDelta === 'object' ? rawDelta : {};
+  const functionPart = delta.function && typeof delta.function === 'object' ? delta.function : {};
+  let index = Number.isInteger(delta.index) && delta.index >= 0 ? delta.index : -1;
+
+  if (index < 0 && delta.id) {
+    index = toolCalls.findIndex(call => call?.id === delta.id);
+  }
+  if (index < 0 && toolCalls.length > 0 && !delta.id && functionPart.name === undefined && functionPart.arguments !== undefined) {
+    index = toolCalls.length - 1;
+  }
+  if (index < 0) index = toolCalls.length;
+
+  if (!toolCalls[index]) {
+    toolCalls[index] = {
+      id: '',
+      type: 'function',
+      function: { name: '', arguments: '' },
     };
+  }
+
+  const call = toolCalls[index];
+  if (delta.id !== undefined && delta.id !== null) call.id = String(delta.id);
+  if (functionPart.name !== undefined && functionPart.name !== null) call.function.name += String(functionPart.name);
+  if (functionPart.arguments !== undefined && functionPart.arguments !== null) {
+    const fragment = typeof functionPart.arguments === 'string'
+      ? functionPart.arguments
+      : JSON.stringify(functionPart.arguments);
+    call.function.arguments += fragment || '';
+  }
+}
+
+function serializeToolValue(value) {
+  if (typeof value === 'string') return value;
+  if (value === undefined || value === null) return '';
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function toolFailurePayload(toolName, code, message) {
+  return JSON.stringify({
+    ok: false,
+    tool: toolName,
+    error: { code, message: String(message || 'Tool execution failed') },
   });
+}
+
+function detectToolFailure(result) {
+  if (result && typeof result === 'object' && (result.ok === false || result.success === false)) return 'tool_returned_failure';
+  const text = serializeToolValue(result).trim();
+  if (!text) return 'empty_tool_result';
+  if (/^(?:Error\b|Unknown tool\b|Install not started\b|Request error\b|Scrape error\b|Delegation (?:not started|error)\b|\[SUDO_REQUIRED\]|.*\[(?:TIMEOUT|EXIT CODE)\])/i.test(text)) {
+    return 'tool_returned_failure';
+  }
+  return null;
+}
+
+function emitEmptyFinalResponse(conversationId, onChunk, finishReason) {
+  const response = finishReason === 'tool_calls'
+    ? `${EMPTY_FINAL_RESPONSE} The model did not provide a usable tool call either.`
+    : EMPTY_FINAL_RESPONSE;
+  if (typeof onChunk === 'function') onChunk(response);
+  addMessage(conversationId, { role: 'assistant', content: response });
+  return response;
+}
+
+function notifyToolCallback(callback, payload, label) {
+  if (typeof callback !== 'function') return;
+  try {
+    callback(payload);
+  } catch (error) {
+    console.warn(`[LLMClient] ${label} callback failed:`, error?.message || error);
+  }
+}
+
+function isTransientProviderError(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return [408, 409, 425, 429, 500, 502, 503, 504].includes(Number(error?.status))
+    || /econnreset|econnrefused|etimedout|socket hang up|fetch failed|network error|connection reset|temporarily unavailable/.test(message);
 }
 
 function getClient() {
@@ -65,16 +196,20 @@ export { getClient };
 /**
  * Process a user message: send to LLM with tools, handle tool calls recursively, stream responses.
  * Now supports:
- *  - Unlimited tool iterations (no cap)
+ *  - Bounded tool iterations with terminal partial-result synthesis
  *  - AbortSignal for stopping mid-operation
  *  - Thinking/reasoning token detection
  *  - Live tool output streaming via onToolProgress
  */
-export async function processMessage(conversationId, userMessage, sessionContext, onChunk, onToolCall, onToolResult, onError, onThinking, abortSignal, onToolProgress, agentRole = 'default') {
+export async function processMessage(conversationId, userMessage, sessionContext, onChunk, onToolCall, onToolResult, onError, onThinking, abortSignal, onToolProgress, agentRole = 'default', executionContext = null) {
   // Snapshot this turn's provider settings; another tab saving Settings must not
   // change the model/temperature halfway through a tool loop.
   const api = { ...config.api };
   const client = getClient();
+  const toolExecutionContext = executionContext || {
+    rootConversationId: conversationId,
+    delegationDepth: 0,
+  };
   // Get conversation history
   const history = getMessages(conversationId, 40);
 
@@ -159,6 +294,8 @@ export async function processMessage(conversationId, userMessage, sessionContext
 
   const maxToolIterations = Math.max(1, config.limits?.maxToolIterations || 12);
   let toolIterations = 0;
+  let transientRetries = 0;
+  const maxTransientRetries = 2;
   while (toolIterations < maxToolIterations) {
     // Check if aborted
     if (abortSignal?.aborted) {
@@ -192,7 +329,10 @@ export async function processMessage(conversationId, userMessage, sessionContext
             temperature: api.temperature,
             max_tokens: api.maxTokens,
             stream: true,
-          }, { signal: abortSignal });
+          }, {
+            signal: abortSignal,
+            timeout: Math.max(1000, Number(config.limits?.llmRequestTimeoutMs) || 120000),
+          });
           break; // Success, exit retry loop
         } catch (apiError) {
           const message = String(apiError.message || '');
@@ -213,6 +353,7 @@ export async function processMessage(conversationId, userMessage, sessionContext
 
       let toolCalls = [];
       let isInThinkBlock = false;
+      let finishReason = null;
 
       for await (const chunk of response) {
         // Check abort between chunks
@@ -231,12 +372,12 @@ export async function processMessage(conversationId, userMessage, sessionContext
         if (delta.reasoning_content || delta.reasoning) {
           const thinkText = delta.reasoning_content || delta.reasoning;
 
-          if (onThinking) onThinking(thinkText);
+          if (typeof onThinking === 'function') onThinking(thinkText);
           continue;
         }
 
         // Handle text content — detect <think> blocks inline
-        if (delta.content) {
+        if (typeof delta.content === 'string' && delta.content) {
           let text = delta.content;
 
           while (text.length > 0) {
@@ -247,13 +388,13 @@ export async function processMessage(conversationId, userMessage, sessionContext
                 if (startIdx > 0) {
                   const contentText = text.substring(0, startIdx);
                   fullContent += contentText;
-                  onChunk(contentText);
+                  if (typeof onChunk === 'function') onChunk(contentText);
                 }
                 isInThinkBlock = true;
                 text = text.substring(startIdx + '<think>'.length);
               } else {
                 fullContent += text;
-                onChunk(text);
+                if (typeof onChunk === 'function') onChunk(text);
                 text = '';
               }
             } else {
@@ -262,12 +403,12 @@ export async function processMessage(conversationId, userMessage, sessionContext
                 // Text before </think> is thinking
                 if (endIdx > 0) {
                   const thinkText = text.substring(0, endIdx);
-                  if (onThinking) onThinking(thinkText);
+                  if (typeof onThinking === 'function') onThinking(thinkText);
                 }
                 isInThinkBlock = false;
                 text = text.substring(endIdx + '</think>'.length);
               } else {
-                if (onThinking) onThinking(text);
+                if (typeof onThinking === 'function') onThinking(text);
                 text = '';
               }
             }
@@ -275,49 +416,35 @@ export async function processMessage(conversationId, userMessage, sessionContext
         }
 
         // Handle tool calls
-        if (delta.tool_calls) {
-          for (const tc of delta.tool_calls) {
-            if (tc.index !== undefined) {
-              if (!toolCalls[tc.index]) {
-                toolCalls[tc.index] = {
-                  id: tc.id || '',
-                  type: 'function',
-                  function: { name: '', arguments: '' },
-                };
-              }
-              if (tc.id) toolCalls[tc.index].id = tc.id;
-              if (tc.function?.name) toolCalls[tc.index].function.name += tc.function.name;
-              if (tc.function?.arguments) toolCalls[tc.index].function.arguments += tc.function.arguments;
-            }
-          }
+        if (delta.tool_calls !== undefined && delta.tool_calls !== null) {
+          const toolDeltas = Array.isArray(delta.tool_calls) ? delta.tool_calls : [delta.tool_calls];
+          for (const tc of toolDeltas) appendToolCallDelta(toolCalls, tc);
         }
 
         // Check for finish
-        if (chunk.choices?.[0]?.finish_reason === 'stop') {
-          // Normal completion, save and return
-          if (fullContent) {
-            addMessage(conversationId, { role: 'assistant', content: fullContent });
-          }
-          return fullContent;
-        }
-
-        if (chunk.choices?.[0]?.finish_reason === 'tool_calls') {
-          break; // Process tool calls below
+        const chunkFinishReason = chunk.choices?.[0]?.finish_reason;
+        if (chunkFinishReason) {
+          finishReason = chunkFinishReason;
+          if (chunkFinishReason === 'stop' || chunkFinishReason === 'tool_calls') break;
         }
       }
 
       // If we have tool calls, execute them
-      if (toolCalls.length > 0) {
+      const collectedToolCalls = toolCalls.filter(Boolean);
+      if (collectedToolCalls.length > 0) {
         toolIterations += 1;
+        const normalizedToolCalls = normalizeToolCalls(collectedToolCalls, toolIterations);
         // Save assistant message with tool calls
-        const assistantMsg = { role: 'assistant', content: fullContent || null, tool_calls: sanitizeToolCalls(toolCalls) };
+        const assistantMsg = {
+          role: 'assistant',
+          content: fullContent || null,
+          tool_calls: normalizedToolCalls.map(call => call.assistantCall),
+        };
         addMessage(conversationId, assistantMsg);
         messages.push(assistantMsg);
 
         // Execute each tool call
-        for (const tc of toolCalls) {
-          if (!tc || !tc.function?.name) continue;
-
+        for (const toolCall of normalizedToolCalls) {
           // Check abort before each tool execution
           if (abortSignal?.aborted) {
             const abortMsg = '[PHANTOM] ⏹ Operation stopped by user.';
@@ -326,45 +453,61 @@ export async function processMessage(conversationId, userMessage, sessionContext
             return abortMsg;
           }
 
-          let args = {};
-          try {
-            args = JSON.parse(tc.function.arguments || '{}');
-          } catch (e) {
-            args = { raw: tc.function.arguments };
-          }
-
-          onToolCall({ id: tc.id, name: tc.function.name, args });
+          const args = toolCall.args;
+          notifyToolCallback(onToolCall, { id: toolCall.id, name: toolCall.name, args }, 'tool-call');
 
           const startTime = Date.now();
-          let result;
-          try {
-            // Pass onToolProgress for live output streaming
-            result = await executeTool(tc.function.name, args, (progressText) => {
-              if (onToolProgress) onToolProgress({ id: tc.id, name: tc.function.name, text: progressText });
-            });
-          } catch (e) {
-            result = `Error: ${e.message}`;
+          let resultForModel;
+          let failureCode = null;
+          if (!toolCall.valid) {
+            failureCode = toolCall.name === INVALID_TOOL_NAME
+              ? 'invalid_tool_call'
+              : (toolCall.argumentError?.code || 'invalid_tool_call');
+            resultForModel = toolFailurePayload(
+              toolCall.name,
+              failureCode,
+              toolCall.argumentError?.error || 'The tool call did not contain a valid function name and JSON object of arguments.',
+            );
+          } else {
+            try {
+              // Pass onToolProgress for live output streaming
+              const rawResult = await executeTool(toolCall.name, args, (progressText) => {
+                notifyToolCallback(onToolProgress, { id: toolCall.id, name: toolCall.name, text: progressText }, 'tool-progress');
+              }, toolExecutionContext);
+              failureCode = detectToolFailure(rawResult);
+              resultForModel = failureCode
+                ? toolFailurePayload(toolCall.name, failureCode, serializeToolValue(rawResult))
+                : serializeToolValue(rawResult);
+            } catch (error) {
+              failureCode = 'tool_exception';
+              resultForModel = toolFailurePayload(toolCall.name, failureCode, error?.message || error);
+            }
           }
           const duration = Date.now() - startTime;
 
           // Truncate very long results
           const maxResultLen = 50000;
-          let truncatedResult = result;
-          if (typeof result === 'string' && result.length > maxResultLen) {
-            truncatedResult = result.substring(0, maxResultLen) + `\n\n... [truncated, ${result.length - maxResultLen} chars omitted]`;
+          let truncatedResult = resultForModel;
+          if (truncatedResult.length > maxResultLen) {
+            truncatedResult = truncatedResult.substring(0, maxResultLen) + `\n\n... [truncated, ${truncatedResult.length - maxResultLen} chars omitted]`;
           }
 
-          onToolResult({ id: tc.id, name: tc.function.name, result: truncatedResult });
+          notifyToolCallback(onToolResult, {
+            id: toolCall.id,
+            name: toolCall.name,
+            result: truncatedResult,
+            status: failureCode ? 'error' : 'success',
+          }, 'tool-result');
 
           // Save tool result
           try {
-            saveToolResult(conversationId, tc.function.name, args, truncatedResult, 'success', duration);
+            saveToolResult(conversationId, toolCall.name, args, truncatedResult, failureCode ? 'error' : 'success', duration);
           } catch (err) {
             console.error('[Tools] Failed to save tool result to memory:', err.message);
           }
 
           // Add tool result to messages
-          const toolMsg = { role: 'tool', content: truncatedResult, tool_call_id: tc.id, name: tc.function.name };
+          const toolMsg = { role: 'tool', content: truncatedResult, tool_call_id: toolCall.id, name: toolCall.name };
           addMessage(conversationId, toolMsg);
           messages.push(toolMsg);
         }
@@ -373,11 +516,13 @@ export async function processMessage(conversationId, userMessage, sessionContext
         continue;
       }
 
-      // No tool calls and finish_reason was not explicitly 'stop' (stream ended)
-      if (fullContent) {
+      // A provider can end a stream with no text and no usable tool call. Do not
+      // return an empty assistant message: make the safe state explicit.
+      if (fullContent.trim()) {
         addMessage(conversationId, { role: 'assistant', content: fullContent });
+        return fullContent;
       }
-      return fullContent;
+      return emitEmptyFinalResponse(conversationId, onChunk, finishReason);
 
     } catch (error) {
       // If aborted, don't show as error
@@ -386,6 +531,16 @@ export async function processMessage(conversationId, userMessage, sessionContext
         if (typeof onChunk === 'function') onChunk(abortMsg);
         addMessage(conversationId, { role: 'assistant', content: abortMsg });
         return abortMsg;
+      }
+      if (isTransientProviderError(error) && transientRetries < maxTransientRetries) {
+        transientRetries += 1;
+        const retryDelay = Math.min(5000, 1000 * (2 ** (transientRetries - 1)));
+        try {
+          await delay(retryDelay, undefined, { signal: abortSignal });
+          continue;
+        } catch {
+          // Fall through to the user-facing error if the operation was stopped.
+        }
       }
       const errMsg = `⚠️ LLM Error: ${error.message}`;
       if (typeof onError === 'function') onError(errMsg);
@@ -397,10 +552,117 @@ export async function processMessage(conversationId, userMessage, sessionContext
     }
   }
 
-  const limitMsg = `[PHANTOM] Tool-call limit reached (${maxToolIterations}). Please review the partial result and continue with a narrower request.`;
-  onChunk(limitMsg);
-  addMessage(conversationId, { role: 'assistant', content: limitMsg });
-  return limitMsg;
+  return await produceToolLimitSummary({
+    conversationId,
+    messages,
+    maxToolIterations,
+    client,
+    api,
+    targetModel,
+    abortSignal,
+    onChunk,
+    onThinking,
+  });
+}
+
+/**
+ * Turn a bounded tool loop into a useful assistant answer. The synthesis pass
+ * deliberately receives no tools, so a model cannot immediately consume the
+ * budget again while trying to explain the partial work.
+ */
+export async function produceToolLimitSummary({
+  conversationId,
+  messages,
+  maxToolIterations,
+  client = getClient(),
+  api = { ...config.api },
+  targetModel = api.model,
+  abortSignal,
+  onChunk,
+  onThinking,
+}) {
+  const notice = `[PHANTOM] Tool-call budget reached after ${maxToolIterations} tool rounds.`;
+  const summaryInstruction = {
+    role: 'user',
+    content: 'The tool-call budget is exhausted. Do not call tools. Provide a concise final answer from the available conversation and tool results. Clearly separate verified findings, partial progress, and the next recommended step.',
+  };
+
+  if (typeof onChunk === 'function') onChunk(`${notice}\n\n`);
+
+  if (abortSignal?.aborted) {
+    const stopped = `${notice}\n\nThe operation was stopped before the partial result could be summarized.`;
+    if (typeof onChunk === 'function') onChunk(stopped.slice(notice.length + 2));
+    addMessage(conversationId, { role: 'assistant', content: stopped });
+    return stopped;
+  }
+
+  try {
+    await paceProvider(client, api, abortSignal);
+    const response = await client.chat.completions.create({
+      model: targetModel,
+      messages: [...messages, summaryInstruction],
+      // No tools/tool_choice here is intentional: this is a terminal summary.
+      temperature: api.temperature,
+      max_tokens: api.maxTokens,
+      stream: true,
+    }, {
+      signal: abortSignal,
+      timeout: Math.max(1000, Number(config.limits?.llmRequestTimeoutMs) || 120000),
+    });
+
+    let summary = '';
+    for await (const chunk of response) {
+      if (abortSignal?.aborted) break;
+      const delta = chunk.choices?.[0]?.delta;
+      if (!delta) continue;
+      if (delta.reasoning_content || delta.reasoning) {
+        if (typeof onThinking === 'function') onThinking(delta.reasoning_content || delta.reasoning);
+        continue;
+      }
+      if (delta.content) {
+        summary += delta.content;
+        if (typeof onChunk === 'function') onChunk(delta.content);
+      }
+    }
+
+    let finalContent;
+    if (summary.trim()) {
+      finalContent = `${notice}\n\n${summary.trim()}`;
+    } else {
+      const partial = buildPartialProgressSummary(messages);
+      if (typeof onChunk === 'function') onChunk(partial);
+      finalContent = `${notice}\n\n${partial}`;
+    }
+    addMessage(conversationId, { role: 'assistant', content: finalContent });
+    return finalContent;
+  } catch (error) {
+    const fallback = `${notice}\n\n${buildPartialProgressSummary(messages)}\n\nFinal synthesis was unavailable: ${error.message}`;
+    if (typeof onChunk === 'function') onChunk(fallback.slice(notice.length + 2));
+    addMessage(conversationId, { role: 'assistant', content: fallback });
+    return fallback;
+  }
+}
+
+function buildPartialProgressSummary(messages) {
+  const assistantProgress = messages
+    .filter(message => message.role === 'assistant' && typeof message.content === 'string' && message.content.trim())
+    .slice(-2)
+    .map(message => message.content.replace(/\s+/g, ' ').trim().slice(0, 600));
+  const toolResults = messages
+    .filter(message => message.role === 'tool' && typeof message.content === 'string')
+    .slice(-3)
+    .map(message => {
+      const compact = message.content.replace(/\s+/g, ' ').trim();
+      return `- ${message.name || 'tool'}: ${compact.slice(0, 600)}${compact.length > 600 ? '…' : ''}`;
+    });
+
+  if (assistantProgress.length === 0 && toolResults.length === 0) {
+    return 'Partial progress is available in the conversation above, but no tool result was produced.';
+  }
+  const sections = [];
+  if (assistantProgress.length > 0) sections.push(`Assistant progress:\n${assistantProgress.map(item => `- ${item}`).join('\n')}`);
+  if (toolResults.length > 0) sections.push(`Tool results:\n${toolResults.join('\n')}`);
+  return `Partial progress:\n${sections.join('\n')}`;
 }
 
 /**

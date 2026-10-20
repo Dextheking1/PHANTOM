@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+const EMPTY_CHAT_RESPONSE = '[PHANTOM] No usable final answer was returned. No further action was taken.';
+
 /** Shared across sockets: a conversation must never have two writers at once. */
 export function createChatSessionHandler({ processMessage, createConversation, getConversation, maxConcurrentChats = 4, maxMessageBytes = 262144 }) {
   const conversations = new Map();
@@ -67,7 +69,7 @@ export function createChatSessionHandler({ processMessage, createConversation, g
         };
         if (!payload.conversationId) emit('conversation_created');
         emit('response_start');
-        await processMessage(
+        const finalResponse = await processMessage(
           entry.conversationId, text, payload.context,
           content => emit('chunk', { content }),
           tool => emit('tool_call', tool),
@@ -77,6 +79,9 @@ export function createChatSessionHandler({ processMessage, createConversation, g
           entry.controller.signal,
           progress => emit('tool_progress', progress),
         );
+        if (typeof finalResponse !== 'string' || !finalResponse.trim()) {
+          emit('chunk', { content: EMPTY_CHAT_RESPONSE });
+        }
       } catch (error) {
         if (emit) emit('error', { message: error.message, terminal: false });
         else reject('Could not start this chat.');

@@ -10,7 +10,8 @@ import {
   getMCPServers, addMCPServer, removeMCPServer,
 } from '../memory/store.js';
 import { getToolDefinitions } from '../tools/registry.js';
-import { isWindowsAdmin } from '../tools/executor.js';
+import { isWindowsAdmin, executeCommand } from '../tools/executor.js';
+import { reaCapabilities, reaListTools, reaCallTool } from '../tools/rea.js';
 import os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -634,5 +635,192 @@ router.delete('/skills/:name', (req, res) => {
   }
 });
 
+
+// ─── Connected Tools & REA / MCP Security Integrations ───
+const SECURITY_CONNECTORS = [
+  {
+    id: 'rea',
+    name: 'REA (Reverse Engineer Anything)',
+    description: 'Autonomous reverse-engineering MCP bridge with 200+ specialized binary & dynamic inspection tools.',
+    type: 'mcp',
+    binary: 'rea',
+    pkg: 'rea-agents',
+    installMethod: 'npm',
+  },
+  {
+    id: 'nmap',
+    name: 'Nmap Network Scanner',
+    description: 'Industry standard network discovery, vulnerability scanner, and port auditing tool.',
+    type: 'binary',
+    binary: 'nmap',
+    pkg: 'nmap',
+    installMethod: 'apt',
+  },
+  {
+    id: 'ghidra',
+    name: 'Ghidra Software Reverse Engineering',
+    description: 'NSA developed SRE framework for decompilation, disassembly, and binary analysis.',
+    type: 'binary',
+    binary: 'ghidra',
+    pkg: 'ghidra',
+    installMethod: 'apt',
+  },
+  {
+    id: 'radare2',
+    name: 'Radare2 / Rizin Binary Analysis',
+    description: 'Advanced command-line hex editor, disassembler, and debugger framework.',
+    type: 'binary',
+    binary: 'r2',
+    pkg: 'radare2',
+    installMethod: 'apt',
+  },
+  {
+    id: 'sqlmap',
+    name: 'SQLMap Automatic SQL Injection',
+    description: 'Automated tool to detect and exploit SQL injection flaws and take over database servers.',
+    type: 'binary',
+    binary: 'sqlmap',
+    pkg: 'sqlmap',
+    installMethod: 'apt',
+  },
+  {
+    id: 'nuclei',
+    name: 'Nuclei Fast Vulnerability Scanner',
+    description: 'Community-powered template-based vulnerability scanner for apps and networks.',
+    type: 'binary',
+    binary: 'nuclei',
+    pkg: 'projectdiscovery/nuclei/v3/cmd/nuclei@latest',
+    installMethod: 'go',
+  },
+];
+
+router.get('/connected-tools', async (req, res) => {
+  try {
+    const customConnectors = JSON.parse(getSetting('custom_connectors', '[]') || '[]');
+    const allConnectors = [...SECURITY_CONNECTORS, ...customConnectors];
+
+    // Check availability in PATH or package
+    const pathDirs = (process.env.PATH || '').split(sep === '\\' ? ';' : ':');
+    const checked = await Promise.all(allConnectors.map(async (tool) => {
+      let installed = false;
+      let version = null;
+
+      if (tool.id === 'rea') {
+        const caps = reaCapabilities();
+        installed = true;
+        return {
+          ...tool,
+          installed,
+          connected: caps.toolCallsEnabled,
+          version: caps.version,
+          details: caps,
+        };
+      }
+
+      // Check if binary is executable on PATH
+      for (const dir of pathDirs) {
+        const candidate = join(dir, tool.binary);
+        if (existsSync(candidate)) {
+          installed = true;
+          break;
+        }
+      }
+
+      return {
+        ...tool,
+        installed,
+        connected: installed,
+        version,
+      };
+    }));
+
+    res.json({ success: true, tools: checked });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/connected-tools/connect', async (req, res) => {
+  try {
+    const { id, action = 'install' } = req.body;
+    if (!id) return res.status(400).json({ error: 'Tool id is required' });
+
+    if (id === 'rea') {
+      // Toggle or enable REA tool calls
+      process.env.REA_ENABLE_TOOL_CALLS = 'true';
+      setSetting('rea_enabled', 'true');
+      return res.json({ success: true, message: 'REA MCP tool bridge connected and active' });
+    }
+
+    const customConnectors = JSON.parse(getSetting('custom_connectors', '[]') || '[]');
+    const target = [...SECURITY_CONNECTORS, ...customConnectors].find(t => t.id === id);
+    if (!target) return res.status(404).json({ error: `Tool ${id} not found` });
+
+    if (action === 'install' || action === 'connect') {
+      const isLinux = process.platform === 'linux';
+      let cmd = '';
+
+      if (target.installMethod === 'apt' && isLinux) {
+        cmd = `apt-get update && apt-get install -y ${target.pkg}`;
+      } else if (target.installMethod === 'go') {
+        cmd = `go install -v ${target.pkg}`;
+      } else if (target.installMethod === 'pip') {
+        cmd = `pip install --no-cache-dir ${target.pkg}`;
+      } else if (target.installMethod === 'npm') {
+        cmd = `npm install -g ${target.pkg}`;
+      } else if (target.customCommand) {
+        cmd = target.customCommand;
+      } else {
+        cmd = `which ${target.binary} || apt-get install -y ${target.binary}`;
+      }
+
+      const output = await executeCommand({ command: cmd, timeout: 300, use_sudo: isLinux });
+      return res.json({ success: true, message: `Tool ${target.name} connected successfully`, output });
+    }
+
+    res.json({ success: true, message: `Tool ${target.name} status updated` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/connected-tools/custom', (req, res) => {
+  try {
+    const { name, binary, description, installMethod = 'apt', pkg, customCommand } = req.body;
+    if (!name || !binary) {
+      return res.status(400).json({ error: 'Name and binary command are required' });
+    }
+
+    const customConnectors = JSON.parse(getSetting('custom_connectors', '[]') || '[]');
+    const id = name.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+    const newTool = {
+      id,
+      name,
+      binary,
+      description: description || `Custom tool: ${name}`,
+      installMethod,
+      pkg: pkg || binary,
+      customCommand,
+      isCustom: true,
+    };
+
+    customConnectors.push(newTool);
+    setSetting('custom_connectors', JSON.stringify(customConnectors));
+    res.json({ success: true, tool: newTool });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/connected-tools/custom/:id', (req, res) => {
+  try {
+    const customConnectors = JSON.parse(getSetting('custom_connectors', '[]') || '[]');
+    const filtered = customConnectors.filter(t => t.id !== req.params.id);
+    setSetting('custom_connectors', JSON.stringify(filtered));
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 export default router;
